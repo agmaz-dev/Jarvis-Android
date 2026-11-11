@@ -43,6 +43,7 @@ public class Llm {
     private final SharedPreferences prefs;
     volatile String loaded = null;
     volatile boolean loading = false;
+    volatile long lastLoadMs = 0;
 
     Llm(Context c) {
         ctx = c.getApplicationContext();
@@ -166,10 +167,12 @@ public class Llm {
         prefs.edit().putString("loading_id", id).commit();
         try {
             if (loaded != null) { nativeUnload(); loaded = null; }
-            int threads = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors() - 2));
+            int threads = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));   // Snapdragon 8 Elite: alle Kerne sind schnelle Kerne
             boolean big = file(id).length() > 6_000_000_000L;
+            long t = System.currentTimeMillis();
             boolean ok = nativeLoad(file(id).getAbsolutePath(), big ? 2048 : 4096, threads);
             if (!ok) return nativeError();
+            lastLoadMs = System.currentTimeMillis() - t;
             loaded = id;
             return null;
         } finally {

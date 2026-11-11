@@ -677,10 +677,11 @@ public class MainActivity extends Activity {
                 try {
                     JSONObject r = new JSONObject(req);
                     String id = r.getString("model");
-                    if (!id.equals(llm.loaded)) js("llm", "status", "loading");
+                    boolean fresh = !id.equals(llm.loaded);
+                    if (fresh) js("llm", "status", "loading");
                     String err = llm.ensureLoaded(id);
                     if (err != null) { js("llm", "done", err); return; }
-                    js("llm", "status", "ready");
+                    js("llm", "status", fresh ? "ready:" + llm.lastLoadMs : "ready");
                     JSONArray ms = r.getJSONArray("messages");
                     String[] roles = new String[ms.length()], contents = new String[ms.length()];
                     for (int i = 0; i < ms.length(); i++) {
@@ -689,7 +690,8 @@ public class MainActivity extends Activity {
                     }
                     String res = Llm.nativeGenerate(roles, contents, r.optInt("max", 700), (float) r.optDouble("temp", 0.8),
                             bytes -> js("llm", "tok", new String(bytes, StandardCharsets.UTF_8)));
-                    js("llm", "done", res == null ? "" : res);
+                    if (res != null && res.startsWith("{")) { js("llm", "stats", res); js("llm", "done", ""); }
+                    else js("llm", "done", res == null ? "" : res);
                 } catch (Throwable t) {
                     js("llm", "done", "Fehler der eigenen KI: " + t.getMessage());
                 }

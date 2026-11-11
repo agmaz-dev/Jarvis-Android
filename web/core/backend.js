@@ -291,7 +291,7 @@
     const poke = () => { if (wake) { const w = wake; wake = null; w(); } };
     LLM.h = (type, val) => {
       if (type === "tok") queue.push(val);
-      else if (type === "status") { if (onStatus) onStatus(val); }
+      else if (type === "status" || type === "stats") { if (onStatus) onStatus(type === "stats" ? "stats:" + val : val); }
       else if (type === "done") { done = true; err = val || ""; }
       poke();
     };
@@ -1142,10 +1142,15 @@
         // Fester Systemtext (wird im Handy zwischengespeichert = schneller), wechselnde Infos in die letzte Nachricht
         const system = systemPrompt(s, [], modus, memOk, true);
         const dyn = [zeitSatz()].concat(ctx.map(c => c.slice(0, 5000))).join("\n\n");
-        const m2 = msgs.slice(-8).map(m => Object.assign({}, m));
+        const m2 = msgs.slice(-6).map(m => Object.assign({}, m));
         while (m2.length && m2[0].role !== "user") m2.shift();
         if (m2.length) m2[m2.length - 1].content = "[Aktuelle Infos für dich, nicht vorlesen]\n" + dyn + "\n\n[Nachricht]\n" + m2[m2.length - 1].content;
-        gen = streamHandy(model, system, m2, signal, st => { if (st === "loading") emit({ t: "action", typ: "status", text: "Eigene KI wird geladen … (das dauert beim ersten Mal etwas)" }); });
+        let loadMs = 0;
+        gen = streamHandy(model, system, m2, signal, st => {
+          if (st === "loading") emit({ t: "action", typ: "status", text: "Eigene KI wird geladen … (das dauert beim ersten Mal etwas)" });
+          else if (st.startsWith("ready:")) loadMs = +st.slice(6) || 0;
+          else if (st.startsWith("stats:")) { try { const x = JSON.parse(st.slice(6)); x.t_load = loadMs; emit({ t: "action", typ: "kistats", stats: x }); } catch (e) { } }
+        });
       }
       const system = gen ? "" : systemPrompt(s, ctx, modus, memOk);
       if (!gen) gen = anbieter === "ollama" ? streamOllama(s, model, system, msgs, signal)

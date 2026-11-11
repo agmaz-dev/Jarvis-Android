@@ -155,6 +155,7 @@ Java_de_agmaz_jarvis_Llm_nativeGenerate(JNIEnv *env, jclass, jobjectArray roles,
     int budget = n_ctx - (maxTokens > 0 ? maxTokens : 700) - 8;
     if ((int) toks.size() > budget) return env->NewStringUTF("Die Unterhaltung ist zu lang für das Modell. Bitte einen neuen Chat beginnen.");
 
+    const int64_t t0 = ggml_time_us();
     // 2) Gemeinsamen Anfang mit dem letzten Mal wiederverwenden
     llama_memory_t mem = llama_get_memory(g_ctx);
     size_t keep = 0;
@@ -182,6 +183,8 @@ Java_de_agmaz_jarvis_Llm_nativeGenerate(JNIEnv *env, jclass, jobjectArray roles,
         g_cache.insert(g_cache.end(), toks.begin() + i, toks.begin() + i + cnt);
     }
 
+    const int64_t t1 = ggml_time_us();
+    const size_t reused = keep;
     // 4) Antwort erzeugen
     llama_sampler *smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(smpl, llama_sampler_init_top_k(64));
@@ -191,6 +194,7 @@ Java_de_agmaz_jarvis_Llm_nativeGenerate(JNIEnv *env, jclass, jobjectArray roles,
 
     std::string pending;
     int limit = maxTokens > 0 ? maxTokens : 700;
+    int generated = 0;
     for (int i = 0; i < limit && !g_stop; i++) {
         llama_token t = llama_sampler_sample(smpl, g_ctx, -1);
         if (llama_vocab_is_eog(vocab, t)) break;
@@ -207,9 +211,16 @@ Java_de_agmaz_jarvis_Llm_nativeGenerate(JNIEnv *env, jclass, jobjectArray roles,
         }
         llama_batch b = llama_batch_get_one(&t, 1);
         if (llama_decode(g_ctx, b) != 0) break;
+        generated++;
         g_cache.push_back(t);
         if ((int) g_cache.size() >= n_ctx - 2) break;
     }
     llama_sampler_free(smpl);
-    return env->NewStringUTF("");
+    const int64_t t2 = ggml_time_us();
+    char stats[512];
+    snprintf(stats, sizeof(stats),
+             "{\"prompt\":%d,\"reused\":%d,\"t_prompt\":%lld,\"gen\":%d,\"t_gen\":%lld,\"tmpl\":%s,\"threads\":%d}",
+             (int) toks.size(), (int) reused, (long long) ((t1 - t0) / 1000), generated, (long long) ((t2 - t1) / 1000),
+             templ_ok ? "true" : "false", (int) llama_n_threads(g_ctx));
+    return env->NewStringUTF(stats);
 }
