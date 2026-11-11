@@ -64,6 +64,8 @@ public class MainActivity extends Activity {
     private static final int REQ_MIC = 7;
 
     private WebView web;
+    private FrameLayout root;
+    static final String BROWSER_UA = "Mozilla/5.0 (Linux; Android 15; SM-F966B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService pool = Executors.newCachedThreadPool();
     private final Map<Integer, HttpURLConnection> conns = new ConcurrentHashMap<>();
@@ -81,7 +83,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#06142c"));
         web = new WebView(this);
         web.setBackgroundColor(Color.parseColor("#06142c"));
@@ -128,6 +130,7 @@ public class MainActivity extends Activity {
             }
         });
         web.addJavascriptInterface(new Bridge(), "JarvisNative");
+        android.webkit.CookieManager.getInstance().setAcceptCookie(true);
 
         tts = new TextToSpeech(this, status -> {
             ttsReady = status == TextToSpeech.SUCCESS;
@@ -420,6 +423,103 @@ public class MainActivity extends Activity {
         srEnd();
     }
 
+
+    // ------------------------------------------------------------------ Google-Suche im unsichtbaren Browser
+    private WebView gWeb;
+    private String gId = null;
+    private boolean gDone = false;
+    private FrameLayout gSetup;
+    private static final String G_EXTRACT = "(function(){var out=[],seen={};"
+            + "document.querySelectorAll('a h3').forEach(function(h){var a=h.closest('a');if(!a)return;var u=a.href||'';"
+            + "if(u.indexOf('/url?')>=0){try{var q=new URL(u).searchParams.get('q')||new URL(u).searchParams.get('url');if(q)u=q;}catch(e){}}"
+            + "if(!/^https?:/.test(u)||/^https?:\\/\\/([a-z]+\\.)?google\\.[a-z.]+\\/(search|preferences|setprefs|advanced)|accounts\\.google|support\\.google|policies\\.google|maps\\.google/.test(u))return;"
+            + "if(seen[u])return;seen[u]=1;var box=a.closest('div.MjjYud,div.g,div[data-hveid]')||a.parentElement;var sn='';"
+            + "if(box){sn=(box.innerText||'').replace(h.innerText,'').replace(/\\s+/g,' ').trim().slice(0,300);}"
+            + "out.push({title:(h.innerText||'').trim(),url:u,snippet:sn});});"
+            + "var ab=document.querySelector('[data-attrid] .hgKElc, .IZ6rdc, .Z0LcW, .kno-rdesc span');"
+            + "if(ab&&ab.innerText){out.unshift({title:'Google-Antwort',url:location.href,snippet:ab.innerText.trim().slice(0,400)});}"
+            + "return JSON.stringify({ok:out.length>0,results:out.slice(0,8)});})()";
+
+    private void gFinish(String json) {
+        if (gDone || gId == null) return;
+        gDone = true;
+        String id = gId;
+        gId = null;
+        js("search", id, json);
+        if (gWeb != null) gWeb.stopLoading();
+    }
+
+    private void googleSearch(final String id, final String q) {
+        if (gId != null) { js("search", id, "{\"ok\":false,\"reason\":\"busy\"}"); return; }
+        if (gWeb == null) {
+            gWeb = new WebView(this);
+            WebSettings s = gWeb.getSettings();
+            s.setJavaScriptEnabled(true);
+            s.setDomStorageEnabled(true);
+            s.setUserAgentString(BROWSER_UA);
+            s.setBlockNetworkImage(true);
+            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(gWeb, true);
+            gWeb.setWebViewClient(new WebViewClient() {
+                @Override
+                public void onPageFinished(WebView v, String url) {
+                    if (gId == null || gDone) return;
+                    if (url.contains("/sorry/") || url.contains("consent.google")) {
+                        gFinish("{\"ok\":false,\"reason\":\"" + (url.contains("consent") ? "consent" : "captcha") + "\"}");
+                        return;
+                    }
+                    main.postDelayed(() -> {
+                        if (gId == null || gDone || gWeb == null) return;
+                        gWeb.evaluateJavascript(G_EXTRACT, value -> {
+                            String json = "{\"ok\":false}";
+                            try { json = new JSONArray("[" + value + "]").getString(0); } catch (Exception ignored) { }
+                            gFinish(json);
+                        });
+                    }, 700);
+                }
+            });
+            // unsichtbar hinter der Oberfläche
+            root.addView(gWeb, 0, new FrameLayout.LayoutParams(1080, 2000));
+        }
+        gId = id;
+        gDone = false;
+        try {
+            gWeb.loadUrl("https://www.google.com/search?hl=de&gl=de&num=10&q=" + java.net.URLEncoder.encode(q, "UTF-8"));
+        } catch (Exception e) {
+            gFinish("{\"ok\":false}");
+            return;
+        }
+        main.postDelayed(() -> { if (id.equals(gId)) gFinish("{\"ok\":false,\"reason\":\"timeout\"}"); }, 15000);
+    }
+
+    private void googleSetup() {
+        if (gSetup != null) return;
+        gSetup = new FrameLayout(this);
+        gSetup.setBackgroundColor(Color.parseColor("#06142c"));
+        WebView w = new WebView(this);
+        w.getSettings().setJavaScriptEnabled(true);
+        w.getSettings().setDomStorageEnabled(true);
+        w.getSettings().setUserAgentString(BROWSER_UA);
+        android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(w, true);
+        w.setWebViewClient(new WebViewClient());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+        lp.topMargin = (int) (56 * getResources().getDisplayMetrics().density);
+        gSetup.addView(w, lp);
+        android.widget.Button done = new android.widget.Button(this);
+        done.setText("Fertig – zurück zu Jarvis");
+        done.setOnClickListener(v -> closeGoogleSetup());
+        gSetup.addView(done, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, (int) (56 * getResources().getDisplayMetrics().density)));
+        root.addView(gSetup, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        w.loadUrl("https://www.google.com/search?hl=de&gl=de&q=Jarvis");
+    }
+
+    private void closeGoogleSetup() {
+        if (gSetup == null) return;
+        android.webkit.CookieManager.getInstance().flush();
+        root.removeView(gSetup);
+        gSetup = null;
+        toast("Google ist eingerichtet.");
+    }
+
     // ------------------------------------------------------------------ Brücke für die Oberfläche
     private class Bridge {
         @JavascriptInterface
@@ -455,6 +555,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void openUrl(final String url) { main.post(() -> openExternal(url)); }
+
+        @JavascriptInterface
+        public void googleSearch(final String id, final String q) { main.post(() -> MainActivity.this.googleSearch(id, q)); }
+
+        @JavascriptInterface
+        public void googleSetup() { main.post(MainActivity.this::googleSetup); }
 
         @JavascriptInterface
         public void srStart(final String lang) { main.post(() -> MainActivity.this.srStart(lang)); }
@@ -521,7 +627,8 @@ public class MainActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if (web != null && web.canGoBack()) web.goBack();
+        if (gSetup != null) closeGoogleSetup();
+        else if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
     }
 

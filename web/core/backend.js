@@ -22,6 +22,7 @@
     mikro: "nach_antwort", weckwort_an: false, weckwort: "Jarvis", sprache: "de-DE",
     auto_merken: true, ort: "Berlin", briefing_beim_start: false, oberflaeche: "vortex",
     chat_sichtbar: true, sounds: true,
+    internetsuche: true, suchmaschine: "google",
     strikt_lokal: false, privat_weiche: true, gedaechtnis_cloud: false, privat_woerter: "", lokal_modell: "",
     routinen: [
       { satz: "guten morgen", aktion: "briefing", wert: "" },
@@ -366,6 +367,94 @@
     return t + `Auffällig: ${si.auffaellig.length ? si.auffaellig.join(", ") : "nichts"}.`;
   }
 
+  /* ------------------------------------------------------------ Internetsuche (Google im unsichtbaren Browser, sonst DuckDuckGo, Wikipedia) */
+  const SUCHE_RE = R(String.raw`\b(such|suche|suchen|google|googel|googl|recherchier\w*|im internet|im netz|online nach|schau nach|nachschauen|aktuell\w*|neueste\w*|news|nachrichten|schlagzeilen)\b`);
+  const BROWSER_UA = "Mozilla/5.0 (Linux; Android 15; SM-F966B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+  const SEARCH_CB = {}; let searchId = 0;
+  window.__jvNative.search = function (id, json) { const f = SEARCH_CB[id]; if (f) { delete SEARCH_CB[id]; f(json); } };
+
+  function sucheErlaubt(s) { return !!s.internetsuche && !s.strikt_lokal; }
+  function suchText(u) {
+    let q = u.replace(R(String.raw`^(hey\s+)?(jarvis|j\.a\.r\.v\.i\.s\.?)[,!. ]*`, "i"), "");
+    q = q.replace(R(String.raw`\b(kannst du|könntest du|bitte|mal|für mich|mir)\b`, "gi"), " ");
+    q = q.replace(R(String.raw`\b(such(e|en)?|google|googel|recherchier\w*|schau nach|nachschauen)\b(\s+(bei|auf|in|im)\s+(google|duckduckgo|internet|netz))?(\s+(nach|über|ob))?`, "gi"), " ");
+    q = q.replace(R(String.raw`\b(im internet|im netz|bei google|auf google|online)\b`, "gi"), " ");
+    return q.replace(/\s+/g, " ").replace(/^[\s,.:;!?-]+|[\s,.:;!?]+$/g, "").slice(0, 200) || u.slice(0, 200);
+  }
+  const decodeHtml = s => { const d = document.createElement("textarea"); d.innerHTML = s; return d.value; };
+  async function getText(url, timeout) {
+    const r = await net(url, { headers: { "User-Agent": BROWSER_UA, "Accept-Language": "de-DE,de;q=0.9,en;q=0.6", Accept: "text/html,application/json;q=0.9,*/*;q=0.8" }, timeout: (timeout || 10) * 1000 });
+    if (!r.ok) throw new HTTPError(r.status, "");
+    return r.text();
+  }
+  function googleNative(q) {
+    return new Promise(res => {
+      if (!(NATIVE && NATIVE.googleSearch)) return res(null);
+      const id = "g" + (++searchId); const to = setTimeout(() => { delete SEARCH_CB[id]; res(null); }, 20000);
+      SEARCH_CB[id] = j => { clearTimeout(to); let d = null; try { d = JSON.parse(j); } catch (e) { } res(d); };
+      NATIVE.googleSearch(id, q);
+    });
+  }
+  async function duckduckgo(q) {
+    for (const base of ["https://html.duckduckgo.com/html/?kl=de-de&q=", "https://lite.duckduckgo.com/lite/?kl=de-de&q="]) {
+      try {
+        const html = await getText(base + encodeURIComponent(q), 10);
+        const doc = new DOMParser().parseFromString(html, "text/html"), out = [];
+        doc.querySelectorAll("a.result__a, a.result-link").forEach(a => {
+          let href = a.getAttribute("href") || "";
+          const m = /[?&]uddg=([^&]+)/.exec(href); if (m) href = decodeURIComponent(m[1]);
+          if (href.startsWith("//")) href = "https:" + href;
+          if (!/^https?:/.test(href) || /duckduckgo\.com\/y\.js|ad_provider/.test(href)) return;
+          const box = a.closest(".result, tr"); let sn = "";
+          const se = box && (box.querySelector(".result__snippet") || (box.nextElementSibling && box.nextElementSibling.querySelector(".result-snippet")));
+          if (se) sn = se.textContent.trim();
+          out.push({ title: a.textContent.trim(), url: href, snippet: sn });
+        });
+        if (out.length) return out.slice(0, 8);
+      } catch (e) { }
+    }
+    return [];
+  }
+  async function wikipedia(q) {
+    try {
+      const u = "https://de.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=4&srsearch=" + encodeURIComponent(q);
+      const j = JSON.parse(await getText(u, 8));
+      return ((j.query || {}).search || []).map(x => ({ title: x.title, url: "https://de.wikipedia.org/wiki/" + encodeURIComponent(x.title.replace(/ /g, "_")), snippet: decodeHtml(String(x.snippet || "").replace(/<[^>]+>/g, "")) }));
+    } catch (e) { return []; }
+  }
+  async function seitenText(url) {
+    try {
+      const html = await getText(url, 8);
+      const doc = new DOMParser().parseFromString(html.slice(0, 1500000), "text/html");
+      doc.querySelectorAll("script,style,noscript,svg,nav,header,footer,aside,form,iframe,button,[role=navigation],[aria-hidden=true]").forEach(n => n.remove());
+      const main = doc.querySelector("article") || doc.querySelector("main") || doc.body;
+      if (!main) return "";
+      return (main.textContent || "").replace(/\s+/g, " ").trim().slice(0, 2500);
+    } catch (e) { return ""; }
+  }
+  async function webSuche(q, s, emit, wunsch) {
+    emit({ t: "action", typ: "suche", text: "Suche: " + q });
+    let results = [], quelle = "";
+    const order = wunsch === "duckduckgo" ? ["ddg", "wiki"] : wunsch === "google" ? ["google", "ddg", "wiki"]
+      : s.suchmaschine === "duckduckgo" ? ["ddg", "google", "wiki"] : ["google", "ddg", "wiki"];
+    for (const e of order) {
+      if (e === "google") { const d = await googleNative(q); if (d && d.ok && d.results && d.results.length) { results = d.results; quelle = "Google"; } }
+      else if (e === "ddg" && NATIVE) { results = await duckduckgo(q); quelle = "DuckDuckGo"; }
+      else if (e === "wiki") { results = await wikipedia(q); quelle = "Wikipedia"; }
+      if (results.length) break;
+    }
+    if (!results.length) return { quelle: "", results: [], ctx: `Internetsuche nach "${q}" hat nichts ergeben (keine Verbindung oder gesperrt). Sag das ehrlich und antworte, so gut du kannst, mit dem Hinweis, dass es nicht aktuell geprüft ist.` };
+    results = results.filter((r, i) => results.findIndex(x => x.url === r.url) === i).slice(0, 6);
+    const top = results.filter(r => !/youtube\.com|facebook\.com|instagram\.com|tiktok\.com|x\.com|twitter\.com/.test(r.url)).slice(0, 3);
+    const texts = await Promise.all(top.map(r => seitenText(r.url)));
+    let ctx = `INTERNETSUCHE (${quelle}) nach "${q}", Stand ${new Date().toLocaleDateString("de-DE")}:\n`;
+    results.forEach((r, i) => { ctx += `[${i + 1}] ${r.title} (${r.url})${r.snippet ? ": " + r.snippet : ""}\n`; });
+    top.forEach((r, i) => { if (texts[i]) ctx += `\nINHALT von ${r.url}:\n${texts[i]}\n`; });
+    ctx = ctx.slice(0, 9000) + "\nBeantworte die Frage mit diesen aktuellen Informationen. Nenne die wichtigste Quelle kurz in Worten (z. B. 'laut tagesschau.de'). Wenn sich die Quellen widersprechen oder nichts Passendes dabei ist, sag das.";
+    emit({ t: "action", typ: "quellen", quelle, links: results.slice(0, 4).map(r => ({ title: r.title, url: r.url })) });
+    return { quelle, results, ctx };
+  }
+
   /* ------------------------------------------------------------ Befehle erkennen */
   const ZAHL = {
     ein: 1, eine: 1, einer: 1, einem: 1, zwei: 2, drei: 3, vier: 4, "fünf": 5, fuenf: 5, sechs: 6,
@@ -561,8 +650,12 @@
     p.push("Fähigkeiten, die die Oberfläche selbst ausführt (der Nutzer muss es nur sagen): Timer und Erinnerungen, Webseiten " +
       "öffnen, Wetter, Systemwerte, Weck-Briefing, Notizen merken und vergessen, Oberfläche wechseln. Behaupte nie, dass " +
       "du etwas ausgeführt hast, wenn es unten nicht als erledigt steht.");
-    p.push(websuche ? "Du kannst das Web durchsuchen. Nutze es für aktuelle Fragen und nenne die Quelle in Worten."
-      : "Du hast keinen Internetzugang. Für aktuelle Ereignisse sag ehrlich, dass dein Wissen einen Stand hat.");
+    if (websuche === "claude") p.push("Du kannst das Web durchsuchen. Nutze es für aktuelle Fragen und nenne die Quelle in Worten.");
+    else if (websuche === "tag") p.push("Du hast Internetzugang über Jarvis. Dein eigenes Wissen hat einen älteren Stand. Wenn eine Frage aktuelle Informationen braucht " +
+      "(Nachrichten, Preise, Ergebnisse, Wetter woanders, Öffnungszeiten, neue Produkte, Personen in Ämtern, alles nach deinem Wissensstand) " +
+      "und unten noch keine INTERNETSUCHE steht, antworte NUR mit genau einer Zeile: [suche: kurze Suchanfrage]. Sonst nie.");
+    else if (websuche === "done") p.push("Unten stehen frische Ergebnisse einer Internetsuche. Verlass dich darauf statt auf dein älteres Wissen. Keine weitere Suche.");
+    else p.push("Du hast keinen Internetzugang. Für aktuelle Ereignisse sag ehrlich, dass dein Wissen einen Stand hat.");
     if (mitGedaechtnis) p.push("GEDÄCHTNIS (was du dir über deinen Nutzer gemerkt hast):\n" + (memText() || "(noch leer)"));
     else p.push("GEDÄCHTNIS: Aus Datenschutzgründen bleibt das Gedächtnis auf dem Gerät des Nutzers und wird dir nicht geschickt. " +
       "Fragt er danach oder nach 'heute steht an', sag kurz, dass die Notizen nur bei der lokalen KI verfügbar sind.");
@@ -686,7 +779,7 @@
   }
 
   class TagFilter {
-    constructor() { this.buf = ""; this.think = false; this.merk = []; }
+    constructor() { this.buf = ""; this.think = false; this.merk = []; this.suche = ""; }
     feed(text, fin) {
       this.buf += text; const out = [];
       while (this.buf) {
@@ -709,7 +802,8 @@
         if (j < 0) { if (fin || this.buf.length > 300) { out.push(this.buf); this.buf = ""; } break; }
         const tag = this.buf.slice(0, j + 1); this.buf = this.buf.slice(j + 1);
         const m = /^\[\s*merken\s*:\s*([\s\S]+?)\s*\]$/i.exec(tag);
-        if (m) this.merk.push(m[1]); else out.push(tag);
+        const q = /^\[\s*suche\s*:\s*([\s\S]+?)\s*\]$/i.exec(tag);
+        if (m) this.merk.push(m[1]); else if (q) this.suche = q[1]; else out.push(tag);
       }
       return out.join("");
     }
@@ -732,6 +826,7 @@
       anbieter = "ollama"; model = await lokalesModell(s);
       if (!model) return emit({ t: "error", message: "Strikt lokal ist an, aber Ollama läuft nicht auf dem Gerät oder hat kein Modell. Es wurde nichts gesendet." });
     }
+    let privatErkannt = privatErkennen(text, s).length > 0;
     if (istCloud(s, anbieter) && s.privat_weiche && !payload.erzwingen_cloud) {
       const gruende = privatErkennen(text, s);
       if (gruende.length) {
@@ -773,10 +868,19 @@
       return emit({ t: "error", message: hint });
     }
     emit({ t: "model", anbieter, modell: model, cloud });
-    const websuche = anbieter === "claude" && !!s.websuche;
-    const system = systemPrompt(s, ctx, websuche, memOk);
+    const claudeSucht = anbieter === "claude" && !!s.websuche;
+    const darfSuchen = !claudeSucht && sucheErlaubt(s) && !privatErkannt;
+    // Ausdrücklich gewünschte Suche ("such mal ...", "was gibt's Neues ...") sofort ausführen
+    const schonErledigt = actions.some(a => ["wetter", "briefing", "system", "webseite", "timer", "oberflaeche"].includes(a.typ));
+    let gesucht = false;
+    if (darfSuchen && !schonErledigt && SUCHE_RE.test(u)) {
+      const wunsch = /duckduckgo|duck duck/.test(u) ? "duckduckgo" : /google|googel|googl/.test(u) ? "google" : "";
+      const r = await webSuche(suchText(text), s, emit, wunsch);
+      ctx.push(r.ctx); gesucht = true;
+    }
     const tf = new TagFilter(), full = [];
-    try {
+    async function generate(modus) {
+      const system = systemPrompt(s, ctx, modus, memOk);
       const gen = anbieter === "ollama" ? streamOllama(s, model, system, msgs, signal)
         : anbieter === "claude" ? streamClaude(s, model, system, msgs, e => emit(Object.assign({ t: "action" }, e)), signal)
           : streamOpenai(s, model, system, msgs, signal);
@@ -786,6 +890,17 @@
       }
       const out = tf.feed("", true);
       if (out) { full.push(out); emit({ t: "delta", text: out }); }
+    }
+    try {
+      await generate(claudeSucht ? "claude" : gesucht ? "done" : darfSuchen ? "tag" : "");
+      // Die KI hat selbst nach einer Suche gefragt: suchen und mit den Ergebnissen noch einmal antworten
+      if (tf.suche && darfSuchen && !gesucht && full.join("").trim().length < 400) {
+        const q = tf.suche; tf.suche = "";
+        const r = await webSuche(q, s, emit, "");
+        ctx.push(r.ctx);
+        if (full.join("").trim()) { full.push(" "); emit({ t: "delta", text: " " }); }
+        await generate("done");
+      }
     } catch (e) {
       if (e.name === "AbortError") throw e;
       if (e instanceof KIError) return emit({ t: "error", message: e.message });

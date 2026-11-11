@@ -237,6 +237,13 @@
         else { ev("gedaechtnis", (a.aktion === "gelernt" ? "Gelernt: " : "Gemerkt: ") + a.text); toast((a.aktion === "gelernt" ? "Gelernt: " : "Gemerkt: ") + a.text); }
         break;
       case "suche": J.emit("module", "suche"); ev("suche", a.text || "Websuche"); break;
+      case "quellen": {
+        J.emit("module", "suche"); ev("suche", "Quellen: " + (a.quelle || "Web"));
+        const box = document.createElement("div"); box.className = "jv-quellen"; box.style.cssText = "margin-top:8px;font-size:.85em;opacity:.85";
+        box.innerHTML = "Quellen (" + esc(a.quelle || "Web") + "): " + (a.links || []).map(l => `<a class="jv-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc((l.title || l.url).slice(0, 60))}</a>`).join(" · ");
+        setTimeout(() => { if (bubble) bubble.appendChild(box); }, 50);
+        break;
+      }
       case "routine": ev("routine", "Routine: " + a.satz); break;
     }
   }
@@ -562,6 +569,7 @@
     L.push(["Sprachausgabe", st2, !st.strikt_lokal && st.stimme !== "aus"]);
     L.push(["Wetter", st.strikt_lokal ? "aus" : "nur der Ortsname geht an Open-Meteo", !st.strikt_lokal]);
     if (cloud && st.anbieter === "claude" && st.websuche) L.push(["Websuche", "Claude sucht bei Bedarf im Web", true]);
+    else if (st.internetsuche && !st.strikt_lokal) L.push(["Internetsuche", "nur die Suchanfrage geht an " + (st.suchmaschine === "duckduckgo" ? "DuckDuckGo" : "Google") + "; bei erkannten privaten Daten wird nicht gesucht", true]);
     return '<div class="jv-list">' + L.map(([a, b, out]) => `<div class="jv-li"><span><b style="font-weight:600">${a}</b><br><small style="white-space:normal">${esc(b)}</small></span><small class="${out ? "po" : "pl"}">${out ? "verlässt den PC" : "bleibt lokal"}</small></div>`).join("") + "</div>";
   }
   async function onModelPick() {
@@ -645,6 +653,9 @@
 <div class="box" data-box="openai"><h4>OpenAI-kompatibel</h4><div class="row"><label>Basis-Adresse<small>OpenAI: https://api.openai.com/v1<br>LM Studio: http://localhost:1234/v1</small></label><input type="url" data-k="openai_url"></div>
 <div class="row"><label>API-Schlüssel<small>bei LM Studio leer lassen</small></label><input type="password" data-k="openai_key" placeholder="sk-…" autocomplete="off"></div>
 <div class="row"><label></label><div class="inl"><span class="res" data-res="openai"></span><button class="jv-btn" data-test="openai">Verbindung testen</button></div></div></div>
+<div class="box"><h4>Internetsuche</h4><div class="row"><label>Im Internet suchen<small>für aktuelle Fragen, Nachrichten, Preise …</small></label>${sw("internetsuche", "Jarvis darf selbst im Internet nachsehen")}</div>
+<div class="row"><label>Suchmaschine<small>wenn eine nicht geht, nimmt Jarvis automatisch die nächste</small></label><select data-k="suchmaschine"><option value="google">Google (dann DuckDuckGo, Wikipedia)</option><option value="duckduckgo">DuckDuckGo (dann Google, Wikipedia)</option></select></div>
+${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><label>Google einrichten<small>einmal öffnen und „Alle akzeptieren“ tippen, falls Google fragt</small></label><div class="inl"><button class="jv-btn" id="jv-gsetup">Google öffnen</button></div></div>' : ""}</div>
 <div class="row"><label>Antwortlänge</label><select data-k="antwortlaenge"><option value="kurz">Kurz (1 bis 3 Sätze)</option><option value="normal">Normal</option><option value="ausfuehrlich">Ausführlich</option></select></div>
 </section>
 <section class="tab" data-tab="stimme"><h3>Wie soll ${esc(J.settings.name)} klingen?</h3><p class="hint">Die Browser-Stimme ist kostenlos. In Microsoft Edge gibt es besonders natürliche Stimmen (Name enthält „Natural“). ElevenLabs klingt am besten und braucht einen eigenen Schlüssel.</p>
@@ -794,6 +805,7 @@
     fillLokal(); bindValues(box); fillVoices(); renderRoutines(J.settings.routinen || []); renderMemory(); renderThemes();
     const upd = () => { const pl = $("jv-privlist"); if (pl) pl.innerHTML = privList(Object.assign({}, J.settings, readValues(box))); };
     box.addEventListener("change", upd); upd();
+    { const g = $("jv-gsetup"); if (g) g.onclick = () => { try { window.JarvisNative.googleSetup(); } catch (e) { } }; }
     /* Anbieter antippen: passenden Kasten zeigen (darunter) und hervorheben */
     box.querySelectorAll('input[name="anb"]').forEach(r => r.addEventListener("change", () => {
       box.querySelectorAll("[data-box]").forEach(x => x.style.outline = "");
