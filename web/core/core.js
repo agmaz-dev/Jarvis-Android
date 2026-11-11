@@ -444,7 +444,8 @@
     };
     r.onerror = e => {
       const er = e.error;
-      if (er === "not-allowed" || er === "service-not-allowed") { MIC.blocked = true; toast("Mikrofon blockiert. Klick links in der Adresszeile auf das Symbol und erlaube das Mikrofon.", true, 7000); }
+      if (er === "cancelled") { MIC.oneShot = false; if (J.settings.mikro !== "aus") MIC.paused = true; }
+      else if (er === "not-allowed" || er === "service-not-allowed") { MIC.blocked = true; toast("Mikrofon blockiert. Klick links in der Adresszeile auf das Symbol und erlaube das Mikrofon.", true, 7000); }
       else if (er === "audio-capture") { MIC.blocked = true; toast("Kein Mikrofon gefunden.", true, 5000); }
       else if (er === "network") { toast("Spracherkennung braucht Internet (der Browser nutzt dafür einen Online-Dienst).", true, 6000); MIC.restarts.push(Date.now(), Date.now(), Date.now()); }
     };

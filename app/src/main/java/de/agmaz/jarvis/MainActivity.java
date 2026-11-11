@@ -254,8 +254,19 @@ public class MainActivity extends Activity {
     }
 
     // ------------------------------------------------------------------ Spracherkennung
+    // Reihenfolge: 0 = Standard-Spracherkennung des Handys, 1 = Google-Spracherkennung direkt,
+    // 2 = Erkennung auf dem Gerät, 3 = Google-Sprachfenster (funktioniert praktisch immer).
+    private int srMode = 0;
+    private boolean srReady = false;
+    private boolean srDialog = false;
+    private static final int REQ_SPEECH = 8;
+
+    private void toast(final String msg) {
+        main.post(() -> android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show());
+    }
+
     private final RecognitionListener srListener = new RecognitionListener() {
-        @Override public void onReadyForSpeech(Bundle params) { js("sr", "start", null); }
+        @Override public void onReadyForSpeech(Bundle params) { srReady = true; js("sr", "start", null); }
         @Override public void onBeginningOfSpeech() { }
         @Override public void onRmsChanged(float rmsdB) { }
         @Override public void onBufferReceived(byte[] buffer) { }
@@ -277,18 +288,29 @@ public class MainActivity extends Activity {
 
         @Override
         public void onError(int error) {
+            if (!srActive) return;
+            // Dienst nicht nutzbar (Samsung-Standard, Sprache fehlt, Verbindung zum Dienst weg): nächste Variante probieren
+            boolean serviceProblem = error == SpeechRecognizer.ERROR_CLIENT || error == 11 || error == 12 || error == 13 || error == 14
+                    || (!srReady && (error == SpeechRecognizer.ERROR_SERVER || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY));
+            if (serviceProblem && !srReady && srMode < 3) {
+                srMode++;
+                if (recognizer != null) { try { recognizer.destroy(); } catch (Exception ignored) { } recognizer = null; }
+                srActive = false;
+                srStart(srLang);
+                return;
+            }
             String e;
             switch (error) {
                 case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: e = "not-allowed"; break;
-                case SpeechRecognizer.ERROR_AUDIO: e = "audio-capture"; break;
+                case SpeechRecognizer.ERROR_AUDIO: e = "audio-capture"; toast("Spracherkennung: Mikrofon ist belegt oder nicht verfügbar."); break;
                 case SpeechRecognizer.ERROR_NETWORK:
                 case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
                 case SpeechRecognizer.ERROR_SERVER: e = "network"; break;
                 case SpeechRecognizer.ERROR_NO_MATCH:
                 case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: e = "no-speech"; break;
-                default: e = "aborted";
+                default: e = "aborted"; toast("Spracherkennung: Fehler " + error);
             }
-            if (srActive) js("sr", "error", e);
+            js("sr", "error", e);
             srEnd();
         }
     };
@@ -306,8 +328,39 @@ public class MainActivity extends Activity {
         }
     }
 
+    private Intent speechIntent() {
+        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, srLang);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, srLang);
+        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+        i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+        i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+        return i;
+    }
+
+    private SpeechRecognizer makeRecognizer() {
+        try {
+            if (srMode == 0) {
+                return SpeechRecognizer.isRecognitionAvailable(this) ? SpeechRecognizer.createSpeechRecognizer(this) : null;
+            }
+            if (srMode == 1) {
+                android.content.ComponentName g = new android.content.ComponentName("com.google.android.googlequicksearchbox",
+                        "com.google.android.voicesearch.serviceapi.GoogleRecognitionService");
+                try { getPackageManager().getPackageInfo(g.getPackageName(), 0); } catch (Exception e) { return null; }
+                return SpeechRecognizer.createSpeechRecognizer(this, g);
+            }
+            if (srMode == 2 && Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+                return SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
     private void srStart(String lang) {
         srLang = lang == null || lang.isEmpty() ? "de-DE" : lang;
+        if (srDialog) return;
         if (paused) { srPending = srLang; return; }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
@@ -316,38 +369,53 @@ public class MainActivity extends Activity {
             srEnd();
             return;
         }
-        if (recognizer == null) {
-            if (SpeechRecognizer.isRecognitionAvailable(this)) {
-                recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-            } else if (Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
-                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
-            } else {
+        while (recognizer == null && srMode < 3) {
+            recognizer = makeRecognizer();
+            if (recognizer == null) srMode++;
+            else recognizer.setRecognitionListener(srListener);
+        }
+        if (srMode >= 3) {   // letzte Möglichkeit: das Sprachfenster von Google
+            try {
                 srActive = true;
+                srDialog = true;
+                Intent i = speechIntent();
+                i.putExtra(RecognizerIntent.EXTRA_PROMPT, "Sprich jetzt mit Jarvis …");
+                startActivityForResult(i, REQ_SPEECH);
+                js("sr", "start", null);
+            } catch (Exception e) {
+                srDialog = false;
+                toast("Keine Spracherkennung gefunden. Bitte die Google-App installieren bzw. aktualisieren.");
                 js("sr", "error", "service-not-allowed");
                 srEnd();
-                main.post(() -> android.widget.Toast.makeText(this, "Keine Spracherkennung gefunden. Bitte die Google-App installieren bzw. aktualisieren.", android.widget.Toast.LENGTH_LONG).show());
-                return;
             }
-            recognizer.setRecognitionListener(srListener);
+            return;
         }
         if (srActive) { recognizer.cancel(); srActive = false; }
-        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, srLang);
-        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-        i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
-        i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+        srReady = false;
         srActive = true;
         try {
-            recognizer.startListening(i);
+            recognizer.startListening(speechIntent());
         } catch (Exception e) {
             js("sr", "error", "aborted");
             srEnd();
         }
     }
 
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_SPEECH) return;
+        srDialog = false;
+        ArrayList<String> r = data == null ? null : data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+        if (resultCode == RESULT_OK && r != null && !r.isEmpty() && !r.get(0).isEmpty()) js("sr", "final", r.get(0));
+        else js("sr", "error", "cancelled");   // Fenster weggetippt: Mikrofon pausieren statt sofort neu öffnen
+        srEnd();
+    }
+
     private void srAbort() {
         srPending = null;
+        if (srDialog) return;   // das Google-Fenster schließt der Nutzer selbst
         if (recognizer != null && srActive) recognizer.cancel();
         srEnd();
     }
@@ -432,7 +500,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         paused = true;
-        if (recognizer != null && srActive) {
+        if (recognizer != null && srActive && !srDialog) {
             recognizer.cancel();
             srActive = false;
             srPending = srLang;   // nach der Rückkehr weiterhören, die Oberfläche wartet noch
