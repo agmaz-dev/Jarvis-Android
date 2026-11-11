@@ -272,7 +272,7 @@
     const st = llmStatus();
     if (!st) return { ok: false, models: [], fehler: "Die eigene KI gibt es nur in der Android-App." };
     if (st.error) return { ok: false, models: [], fehler: st.error };
-    const inst = (st.models || []).filter(m => m.installed).map(m => m.id);
+    const inst = (st.models || []).filter(m => m.installed && !m.crashed).map(m => m.id);
     if (!inst.length) {
       const dl = (st.models || []).find(m => m.downloading);
       return { ok: false, models: [], fehler: dl ? `${dl.name} wird gerade heruntergeladen (${dl.total > 0 ? Math.round(100 * dl.done / dl.total) : 0} %).` : "Noch kein Modell heruntergeladen: Einstellungen → KI & Modelle → Eigene KI." };

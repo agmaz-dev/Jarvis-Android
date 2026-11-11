@@ -47,7 +47,14 @@ public class Llm {
     Llm(Context c) {
         ctx = c.getApplicationContext();
         prefs = ctx.getSharedPreferences("llm", Context.MODE_PRIVATE);
+        // Beim letzten Laden abgestürzt? Dann dieses Modell sperren, bis der Nutzer es freigibt
+        String l = prefs.getString("loading_id", null);
+        if (l != null) prefs.edit().remove("loading_id").putBoolean("crash_" + l, true).apply();
     }
+
+    boolean crashed(String id) { return prefs.getBoolean("crash_" + id, false); }
+
+    void clearCrash(String id) { prefs.edit().remove("crash_" + id).apply(); }
 
     File dir() {
         File d = new File(ctx.getExternalFilesDir(null), "models");
@@ -85,6 +92,7 @@ public class Llm {
                 j.put("info", m[3]);
                 boolean inst = installed(m[0]);
                 j.put("installed", inst);
+                j.put("crashed", crashed(m[0]));
                 if (!inst && m[0].equals(DownloadService.id)) {
                     String st = DownloadService.state;
                     j.put("downloading", isBusy());
@@ -146,16 +154,27 @@ public class Llm {
     synchronized String ensureLoaded(String id) {
         if (id.equals(loaded)) return null;
         if (!installed(id)) return "Das Modell ist noch nicht heruntergeladen. Einstellungen → KI & Modelle → Eigene KI.";
+        if (crashed(id)) return "Dieses Modell hat Jarvis beim letzten Laden zum Absturz gebracht (zu wenig Arbeitsspeicher). Bitte das kleinere Modell (E4B) verwenden oder in den Einstellungen „Trotzdem erneut versuchen“ tippen.";
+        // Genug freier Arbeitsspeicher? (Modellgröße + ca. 1 GB Reserve)
+        android.app.ActivityManager am = (android.app.ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+        android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+        am.getMemoryInfo(mi);
+        double needGb = file(id).length() / 1e9 + 1.0;
+        if (mi.totalMem / 1e9 < needGb + 3.0) return String.format(java.util.Locale.GERMANY, "Für dieses Modell reicht der Arbeitsspeicher des Handys nicht (%.0f GB). Bitte das kleinere Modell nehmen.", mi.totalMem / 1e9);
         loading = true;
+        // Merken, dass gerade geladen wird: stürzt die App dabei ab, wissen wir es beim nächsten Start
+        prefs.edit().putString("loading_id", id).commit();
         try {
             if (loaded != null) { nativeUnload(); loaded = null; }
             int threads = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors() - 2));
-            boolean ok = nativeLoad(file(id).getAbsolutePath(), 4096, threads);
+            boolean big = file(id).length() > 6_000_000_000L;
+            boolean ok = nativeLoad(file(id).getAbsolutePath(), big ? 2048 : 4096, threads);
             if (!ok) return nativeError();
             loaded = id;
             return null;
         } finally {
             loading = false;
+            prefs.edit().remove("loading_id").apply();
         }
     }
 }

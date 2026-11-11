@@ -639,6 +639,9 @@ public class MainActivity extends Activity {
         public void llmStop() { Llm.nativeStop(); }
 
         @JavascriptInterface
+        public void llmRetry(final String id) { if (llm != null) llm.clearCrash(id); }
+
+        @JavascriptInterface
         public void llmGenerate(final String req) {
             if (llm == null) { js("llm", "done", "KI-Modul fehlt in dieser App-Version."); return; }
             llmExec.execute(() -> {

@@ -819,7 +819,8 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
     const gb = b => (b / 1e9).toFixed(1).replace(".", ",");
     box.innerHTML = (st.models || []).map(m => {
       let right;
-      if (m.installed) right = `<span class="res ok">✓ installiert${st.loaded === m.id ? " · geladen" : ""}</span><button class="jv-btn" data-llmdel="${m.id}">Löschen</button>`;
+      if (m.installed && m.crashed) right = `<span class="res bad">⚠ zu groß für den Arbeitsspeicher (App ist abgestürzt)</span><button class="jv-btn" data-llmretry="${m.id}">Trotzdem erneut versuchen</button><button class="jv-btn" data-llmdel="${m.id}">Löschen (${String(m.gb).replace(".", ",")} GB frei)</button>`;
+      else if (m.installed) right = `<span class="res ok">✓ installiert${st.loaded === m.id ? " · geladen" : ""}</span><button class="jv-btn" data-llmdel="${m.id}">Löschen</button>`;
       else if (m.downloading) {
         // Manche Server nennen die Gesamtgröße nicht – dann mit der bekannten Modellgröße rechnen
         const total = m.total > 0 ? m.total : parseFloat(m.gb) * 1e9, done = m.done || 0;
@@ -841,6 +842,7 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
       return `<div class="row"><label>${esc(m.name)}<small>${esc(m.info)}</small></label><div class="inl">${right}</div></div>`;
     }).join("") + `<p class="hint" style="margin:6px 0 0">Freier Speicher: ${String(Math.round(st.free_gb || 0))} GB · App-Version ${esc((window.JarvisNative.appVersion && window.JarvisNative.appVersion()) || "?")}</p>`;
     box.querySelectorAll("[data-llmdl]").forEach(b => b.onclick = () => { b.disabled = true; b.textContent = "startet …"; window.JarvisNative.llmDownload(b.dataset.llmdl); setTimeout(renderLlm, 1500); });
+    box.querySelectorAll("[data-llmretry]").forEach(b => b.onclick = () => { window.JarvisNative.llmRetry(b.dataset.llmretry); toast("Freigegeben. Vorher andere Apps schließen."); renderLlm(); loadModels(); });
     box.querySelectorAll("[data-llmdel]").forEach(b => b.onclick = () => {
       if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "Wirklich?"; return; }
       window.JarvisNative.llmDelete(b.dataset.llmdel); setTimeout(() => { renderLlm(); loadModels(); }, 800);
