@@ -813,8 +813,8 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
   let llmT = 0; const llmSpeed = {};
   function renderLlm() {
     clearTimeout(llmT);
-    const box = $("jv-llm"); if (!box || !$("jv-set").classList.contains("on")) return;
-    let st; try { st = JSON.parse(window.JarvisNative.llmStatus()); } catch (e) { box.textContent = "Status nicht lesbar."; return; }
+    const box = $("jv-llm"); if (!box) return;
+    let st; try { st = JSON.parse(window.JarvisNative.llmStatus()); } catch (e) { box.textContent = "Status nicht lesbar: " + e.message; return; }
     if (st.error) { box.textContent = st.error; return; }
     const gb = b => (b / 1e9).toFixed(1).replace(".", ",");
     box.innerHTML = (st.models || []).map(m => {
@@ -843,8 +843,10 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
       if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "Wirklich?"; return; }
       window.JarvisNative.llmDelete(b.dataset.llmdel); setTimeout(() => { renderLlm(); loadModels(); }, 800);
     });
+    box.insertAdjacentHTML("beforeend", '<div class="row"><label></label><div class="inl"><button class="jv-btn" id="jv-llmref">↻ Status aktualisieren</button></div></div>');
+    $("jv-llmref").onclick = () => { renderLlm(); loadModels(); };
     const busy = (st.models || []).some(m => m.downloading);
-    if (busy) llmT = setTimeout(renderLlm, 1500);
+    if (busy && $("jv-set").classList.contains("on")) llmT = setTimeout(renderLlm, 1500);
     else if (box.dataset.wasBusy) { delete box.dataset.wasBusy; loadModels(); }
     if (busy) box.dataset.wasBusy = 1;
   }
@@ -857,7 +859,7 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
     const upd = () => { const pl = $("jv-privlist"); if (pl) pl.innerHTML = privList(Object.assign({}, J.settings, readValues(box))); };
     box.addEventListener("change", upd); upd();
     { const g = $("jv-gsetup"); if (g) g.onclick = () => { try { window.JarvisNative.googleSetup(); } catch (e) { } }; }
-    if (HAS_LLM) renderLlm();
+    if (HAS_LLM) setTimeout(renderLlm, 80);   // erst wenn das Fenster offen ist
     /* Anbieter antippen: passenden Kasten zeigen (darunter) und hervorheben */
     box.querySelectorAll('input[name="anb"]').forEach(r => r.addEventListener("change", () => {
       box.querySelectorAll("[data-box]").forEach(x => x.style.outline = "");
