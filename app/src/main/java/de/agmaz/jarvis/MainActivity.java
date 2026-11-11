@@ -139,7 +139,7 @@ public class MainActivity extends Activity {
             ttsReady = status == TextToSpeech.SUCCESS;
             if (ttsReady) {
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String id) { js("tts", "start", id); }
+                    @Override public void onStart(String id) { main.post(MainActivity.this::beepUnmuteNow); js("tts", "start", id); }
                     @Override public void onDone(String id) { js("tts", "done", id); }
                     @Override @SuppressWarnings("deprecation") public void onError(String id) { js("tts", "error", id); }
                     @Override public void onError(String id, int code) { js("tts", "error", id); }
@@ -340,6 +340,42 @@ public class MainActivity extends Activity {
             srActive = false;
             js("sr", "end", null);
         }
+        beepUnmute();
+    }
+
+    // Die Spracherkennung von Android piept bei jedem Start/Ende. Solange Jarvis zuhört, die Töne stumm schalten.
+    private boolean beepMuted = false;
+    private final int[] BEEP_STREAMS = {android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.STREAM_SYSTEM};
+
+    private void beepMute() {
+        if (beepMuted || (tts != null && ttsReady && tts.isSpeaking())) return;
+        android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        for (int st : BEEP_STREAMS) {
+            try { am.adjustStreamVolume(st, android.media.AudioManager.ADJUST_MUTE, 0); } catch (Exception ignored) { }
+        }
+        beepMuted = true;
+    }
+
+    private void beepUnmuteNow() {
+        if (!beepMuted) return;
+        beepMuted = false;
+        android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        for (int st : BEEP_STREAMS) {
+            try { am.adjustStreamVolume(st, android.media.AudioManager.ADJUST_UNMUTE, 0); } catch (Exception ignored) { }
+        }
+    }
+
+    private void beepUnmute() {
+        if (!beepMuted) return;
+        beepMuted = false;
+        // kurz warten, damit auch der End-Ton noch stumm bleibt
+        main.postDelayed(() -> {
+            if (beepMuted) return;
+            android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            for (int st : BEEP_STREAMS) {
+                try { am.adjustStreamVolume(st, android.media.AudioManager.ADJUST_UNMUTE, 0); } catch (Exception ignored) { }
+            }
+        }, 350);
     }
 
     private Intent speechIntent() {
@@ -408,6 +444,7 @@ public class MainActivity extends Activity {
         srReady = false;
         srActive = true;
         try {
+            beepMute();
             recognizer.startListening(speechIntent());
         } catch (Exception e) {
             js("sr", "error", "aborted");
@@ -667,6 +704,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        beepUnmuteNow();
         paused = true;
         if (recognizer != null && srActive && !srDialog) {
             recognizer.cancel();

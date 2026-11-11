@@ -316,6 +316,7 @@
     }
     function finish() { finished = true; if (!busy && !q.length) end(); }
     function end() {
+      if (J.settings && J.settings.mikro === "nach_antwort" && spoke) MIC.paused = false;
       if (J.state === "speaking" || J.state === "thinking") setState("idle");
       const cbs = doneCbs; doneCbs = []; cbs.forEach(f => f());
     }
@@ -446,12 +447,14 @@
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i], txt = res[0].transcript;
+        MIC.silent = 0;
         if (res.isFinal) heard(txt); else interim += txt;
       }
       if (interim.trim()) { $("jv-live").textContent = interim; if (J.state === "idle") setState("listening"); clearTimeout(MIC.lt); MIC.lt = setTimeout(() => { if (J.state === "listening") { setState("idle"); $("jv-live").textContent = ""; } }, 2500); }
     };
     r.onerror = e => {
       const er = e.error;
+      if (er === "no-speech") MIC.silent = (MIC.silent || 0) + 1;
       if (er === "cancelled") { MIC.oneShot = false; if (J.settings.mikro !== "aus") MIC.paused = true; }
       else if (er === "not-allowed" || er === "service-not-allowed") { MIC.blocked = true; toast("Mikrofon blockiert. Klick links in der Adresszeile auf das Symbol und erlaube das Mikrofon.", true, 7000); }
       else if (er === "audio-capture") { MIC.blocked = true; toast("Kein Mikrofon gefunden.", true, 5000); }
@@ -461,6 +464,8 @@
       MIC.running = false; MIC.starting = false;
       if (MIC.oneShot) MIC.oneShot = false;
       micUi();
+      // "Nach Antwort": hört nach einer Antwort zu; kommt zweimal nichts, Mikrofon pausieren statt endlos neu zu starten
+      if (MIC.silent >= 2 && J.settings.mikro === "nach_antwort" && !J.settings.weckwort_an) { MIC.silent = 0; MIC.paused = true; micUi(); micLevel(false); return; }
       if (micShouldRun()) {
         const now = Date.now(); MIC.restarts = MIC.restarts.filter(x => now - x < 10000); MIC.restarts.push(now);
         setTimeout(micSync, MIC.restarts.length > 6 ? 3000 : 250);
