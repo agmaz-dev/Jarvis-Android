@@ -297,7 +297,8 @@
     };
     const ab = () => { try { NATIVE.llmStop(); } catch (e) { } poke(); };
     if (signal) signal.addEventListener("abort", ab);
-    NATIVE.llmGenerate(JSON.stringify({ model, messages: [{ role: "system", content: system }].concat(msgs), max: 700, temp: 0.8 }));
+    const s0 = loadSettings(), maxTok = s0.antwortlaenge === "ausfuehrlich" ? 700 : s0.antwortlaenge === "normal" ? 400 : 250;
+    NATIVE.llmGenerate(JSON.stringify({ model, messages: [{ role: "system", content: system }].concat(msgs), max: maxTok, temp: 0.8 }));
     try {
       for (; ;) {
         while (queue.length) yield queue.shift();
@@ -868,7 +869,8 @@
       "und unten noch keine INTERNETSUCHE steht, antworte NUR mit genau einer Zeile: [suche: kurze Suchanfrage]. Sonst nie.");
     else if (websuche === "done") p.push("Unten stehen frische Daten (Internetsuche oder Ergebnis einer Aktion auf dem Handy). Verlass dich darauf statt auf dein älteres Wissen. Keine weitere Suche und keine weitere Aktion.");
     else p.push("Du hast keinen Internetzugang. Für aktuelle Ereignisse sag ehrlich, dass dein Wissen einen Stand hat.");
-    if (HAS_ACT && websuche !== "done") p.push("WERKZEUGE auf dem Handy des Nutzers. Wenn er etwas erledigt haben will, antworte NUR mit genau einer Zeile [aktion: JSON], ohne weiteren Text. Möglich:\n" +
+    if (HAS_ACT && websuche !== "done" && kompakt) p.push('Handy-Aufgaben: antworte NUR mit einer Zeile [aktion: JSON]. typ: mail_liste, mail_lesen{nr}, mail_senden{an,betreff,text}, mail_antworten{nr,text}, sms{wer,text}, whatsapp{wer,text}, anrufen{wer}, navigation{ziel}, app{name}, wecker{zeit}, timer{minuten}. Beispiel: [aktion: {"typ":"sms","wer":"Ahmet","text":"Ich komme später."}] Texte vollständig im Namen des Nutzers formulieren.');
+    else if (HAS_ACT && websuche !== "done") p.push("WERKZEUGE auf dem Handy des Nutzers. Wenn er etwas erledigt haben will, antworte NUR mit genau einer Zeile [aktion: JSON], ohne weiteren Text. Möglich:\n" +
       '[aktion: {"typ":"mail_liste","ungelesen":true}] E-Mails abrufen\n' +
       '[aktion: {"typ":"mail_lesen","nr":1}] E-Mail Nummer aus der letzten Liste lesen (oder "von":"Name")\n' +
       '[aktion: {"typ":"mail_senden","an":"Name oder Adresse","betreff":"...","text":"fertiger Text"}]\n' +

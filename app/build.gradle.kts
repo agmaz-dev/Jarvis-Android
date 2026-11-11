@@ -46,6 +46,9 @@ android {
         release {
             isMinifyEnabled = false
         }
+        debug {
+            isJniDebuggable = false
+        }
     }
 
     // Die Oberflächen kommen 1:1 aus dem Ordner web/ (derselbe Code wie die Web-Version)
