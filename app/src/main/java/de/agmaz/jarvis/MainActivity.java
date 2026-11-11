@@ -652,6 +652,8 @@ public class MainActivity extends Activity {
                         case "navigation": r = Actions.navigate(MainActivity.this, a.optString("ziel")); break;
                         case "app": r = Actions.openApp(MainActivity.this, a.optString("name")); break;
                         case "taschenlampe": r = Actions.torch(MainActivity.this, a.optBoolean("an", true)); break;
+                        case "kalender_neu": r = Actions.calendarAdd(MainActivity.this, a.optString("titel"), a.optLong("start"), a.optLong("ende"), a.optString("ort"), a.optBoolean("ganztags")); break;
+                        case "kalender_liste": r = Actions.calendarList(MainActivity.this, a.optLong("von"), a.optLong("bis")); break;
                         case "mail_liste": r = Mail.list(a.optString("user"), a.optString("pass"), a.optInt("anzahl", 5), a.optBoolean("ungelesen", true)); break;
                         case "mail_lesen": r = Mail.read(a.optString("user"), a.optString("pass"), a.optLong("uid")); break;
                         case "mail_senden": r = Mail.send(a.optString("user"), a.optString("pass"), a.optString("an"), a.optString("betreff"), a.optString("text"), a.optLong("antwort_uid", 0)); break;

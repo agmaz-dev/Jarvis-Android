@@ -167,7 +167,7 @@ public class Llm {
         prefs.edit().putString("loading_id", id).commit();
         try {
             if (loaded != null) { nativeUnload(); loaded = null; }
-            int threads = Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors()));   // Snapdragon 8 Elite: alle Kerne sind schnelle Kerne
+            int threads = Math.max(2, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));   // beim Schreiben weniger ist mehr
             boolean big = file(id).length() > 6_000_000_000L;
             long t = System.currentTimeMillis();
             boolean ok = nativeLoad(file(id).getAbsolutePath(), big ? 2048 : 4096, threads);

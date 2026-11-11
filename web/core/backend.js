@@ -623,7 +623,40 @@
         return { say: r.ok ? `Timer über ${sek >= 60 ? Math.round(sek / 60) + " Minuten" : sek + " Sekunden"} läuft.` : r.msg };
       }
     }
+    if (typ === "kalender_eintragen" || typ === "termin") {
+      const d = parseDatum(a.datum);
+      if (!d) return { say: "Für welchen Tag soll ich den Termin eintragen?" };
+      const tm = /(\d{1,2})(?:[:.](\d{2}))?/.exec(String(a.zeit || ""));
+      let start, ende, ganz = false;
+      if (tm) { start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), +tm[1], +(tm[2] || 0)); ende = new Date(start.getTime() + (+a.dauer_min || 60) * 60000); }
+      else { ganz = true; start = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); ende = new Date(start.getTime() + 86400000); }
+      const titel = a.titel || a.text || "Termin";
+      const r = await nativeAct("kalender_neu", { titel, start: start.getTime(), ende: ende.getTime(), ort: a.ort || "", ganztags: ganz });
+      return { say: r.ok ? `Eingetragen: ${titel} am ${d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}${tm ? " um " + tm[1] + ":" + (tm[2] || "00") + " Uhr" : ""}.` : r.msg };
+    }
+    if (typ === "kalender_liste" || typ === "termine") {
+      const d = parseDatum(a.datum || "heute") || new Date();
+      const von = new Date(d.getFullYear(), d.getMonth(), d.getDate()), tage = Math.min(31, +a.tage || 1);
+      const r = await nativeAct("kalender_liste", { von: von.getTime(), bis: von.getTime() + tage * 86400000 });
+      if (!r.ok) return { say: r.msg };
+      return { ctx: `KALENDER ab ${von.toLocaleDateString("de-DE")} (${tage} Tag${tage > 1 ? "e" : ""}):\n` + ((r.termine || []).map(t => `- ${t.beginn}${t.ende ? "–" + t.ende : ""}: ${t.titel}${t.ort ? " (" + t.ort + ")" : ""}`).join("\n") || "keine Termine") + "\nNenne die Termine kurz und natürlich." };
+    }
     return { say: "Diese Aktion kenne ich nicht." };
+  }
+  // "heute", "morgen", "übermorgen", "samstag", "2026-11-14", "14.11."
+  function parseDatum(x) {
+    const t = String(x || "").toLowerCase().trim(), now = new Date(), base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (!t) return null;
+    if (/^heute/.test(t)) return base;
+    if (/^übermorgen|^uebermorgen/.test(t)) return new Date(base.getTime() + 2 * 86400000);
+    if (/^morgen/.test(t)) return new Date(base.getTime() + 86400000);
+    let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t); if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    m = /^(\d{1,2})\.(\d{1,2})\.?(\d{2,4})?/.exec(t);
+    if (m) { let y = m[3] ? +m[3] : now.getFullYear(); if (y < 100) y += 2000; const d = new Date(y, +m[2] - 1, +m[1]); if (!m[3] && d < base) d.setFullYear(y + 1); return d; }
+    const tage = ["sonntag", "montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"];
+    const i = tage.findIndex(w => t.includes(w));
+    if (i >= 0) { let diff = (i - base.getDay() + 7) % 7; if (diff === 0 || /nächst|naechst/.test(t)) diff = diff || 7; return new Date(base.getTime() + diff * 86400000); }
+    return null;
   }
   async function ausfuehren(p, s) {
     if (p.name === "mail_senden") {
@@ -648,6 +681,10 @@
       return { typ: "wecker", zeit: m[3] + ":" + (m[4] || m[5] || "00") };
     if ((m = R(String.raw`\bruf(e)?\s+(.+?)\s+an\b`, "i").exec(orig))) return { typ: "anrufen", wer: m[2] };
     if ((m = R(String.raw`\b(navigier\w*|fahr mich|bring mich|route|navi)\b\s*(mich\s+)?(zu[mr]?|nach|zur|zu)\s+(.+)$`, "i").exec(orig))) return { typ: "navigation", ziel: m[4].replace(/[.!?]+$/, "") };
+    if (R(String.raw`\b(was (habe|hab) ich|termine?|kalender)\b`).test(u) && R(String.raw`\b(heute|morgen|übermorgen|diese woche|woche|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b`).test(u) && !R(String.raw`\b(trag|eintragen|erstell|leg)\w*`).test(u)) {
+      const tag = (R(String.raw`\b(heute|übermorgen|morgen|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b`).exec(u) || ["heute"])[0];
+      return { typ: "kalender_liste", datum: tag, tage: /woche/.test(u) ? 7 : 1 };
+    }
     if (R(String.raw`\b(taschenlampe|blitzlicht)\b`).test(u)) return { typ: "taschenlampe", an: !R(String.raw`\b(aus|ausschalten|ausmachen)\b`).test(u) };
     if ((m = R(String.raw`^(?:hey\s+)?(?:jarvis[,!. ]*)?(?:bitte\s+)?(?:öffne|oeffne|starte)\s+(?:mir\s+)?(?:die\s+)?(?:app\s+)?(.+?)(?:\s+app)?[.!?]*$`, "i").exec(orig)) && !R(String.raw`https?://|\.(de|com|org|net)\b`).test(u))
       return { typ: "app", name: m[1] };
@@ -869,7 +906,7 @@
       "und unten noch keine INTERNETSUCHE steht, antworte NUR mit genau einer Zeile: [suche: kurze Suchanfrage]. Sonst nie.");
     else if (websuche === "done") p.push("Unten stehen frische Daten (Internetsuche oder Ergebnis einer Aktion auf dem Handy). Verlass dich darauf statt auf dein älteres Wissen. Keine weitere Suche und keine weitere Aktion.");
     else p.push("Du hast keinen Internetzugang. Für aktuelle Ereignisse sag ehrlich, dass dein Wissen einen Stand hat.");
-    if (HAS_ACT && websuche !== "done" && kompakt) p.push('Handy-Aufgaben: antworte NUR mit einer Zeile [aktion: JSON]. typ: mail_liste, mail_lesen{nr}, mail_senden{an,betreff,text}, mail_antworten{nr,text}, sms{wer,text}, whatsapp{wer,text}, anrufen{wer}, navigation{ziel}, app{name}, wecker{zeit}, timer{minuten}. Beispiel: [aktion: {"typ":"sms","wer":"Ahmet","text":"Ich komme später."}] Texte vollständig im Namen des Nutzers formulieren.');
+    if (HAS_ACT && websuche !== "done" && kompakt) p.push('Handy-Aufgaben: antworte NUR mit einer Zeile [aktion: JSON]. typ: mail_liste, mail_lesen{nr}, mail_senden{an,betreff,text}, mail_antworten{nr,text}, sms{wer,text}, whatsapp{wer,text}, anrufen{wer}, navigation{ziel}, app{name}, wecker{zeit}, timer{minuten}, kalender_eintragen{titel,datum,zeit,ort}, kalender_liste{datum,tage}. datum als JJJJ-MM-TT oder "morgen". Beispiel: [aktion: {"typ":"sms","wer":"Ahmet","text":"Ich komme später."}] Texte vollständig im Namen des Nutzers formulieren.');
     else if (HAS_ACT && websuche !== "done") p.push("WERKZEUGE auf dem Handy des Nutzers. Wenn er etwas erledigt haben will, antworte NUR mit genau einer Zeile [aktion: JSON], ohne weiteren Text. Möglich:\n" +
       '[aktion: {"typ":"mail_liste","ungelesen":true}] E-Mails abrufen\n' +
       '[aktion: {"typ":"mail_lesen","nr":1}] E-Mail Nummer aus der letzten Liste lesen (oder "von":"Name")\n' +
@@ -877,6 +914,7 @@
       '[aktion: {"typ":"mail_antworten","nr":1,"text":"fertiger Text"}] (ohne nr: auf die zuletzt gelesene)\n' +
       '[aktion: {"typ":"sms","wer":"Name oder Nummer","text":"..."}] · [aktion: {"typ":"whatsapp","wer":"...","text":"..."}] · [aktion: {"typ":"anrufen","wer":"..."}]\n' +
       '[aktion: {"typ":"navigation","ziel":"..."}] · [aktion: {"typ":"app","name":"..."}] · [aktion: {"typ":"wecker","zeit":"07:30"}] · [aktion: {"typ":"timer","minuten":10}] · [aktion: {"typ":"taschenlampe","an":true}]\n' +
+      '[aktion: {"typ":"kalender_eintragen","titel":"Zahnarzt","datum":"2026-11-14","zeit":"10:00","ort":"..."}] (datum JJJJ-MM-TT, ohne zeit = ganztägig) · [aktion: {"typ":"kalender_liste","datum":"morgen","tage":1}]\n' +
       "E-Mails und Nachrichten formulierst du vollständig, freundlich und passend im Namen des Nutzers" + (s.nutzer ? " (" + s.nutzer + ")" : "") + ". Jarvis fragt vor dem Senden selbst nach. Erfinde keine Adressen.");
     if (mitGedaechtnis) p.push("GEDÄCHTNIS (was du dir über deinen Nutzer gemerkt hast):\n" + (memText(kompakt ? 1500 : 4000) || "(noch leer)"));
     else p.push("GEDÄCHTNIS: Aus Datenschutzgründen bleibt das Gedächtnis auf dem Gerät des Nutzers und wird dir nicht geschickt. " +

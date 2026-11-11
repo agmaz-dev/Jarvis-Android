@@ -255,7 +255,7 @@
         const neu = Math.max(0, (x.prompt || 0) - (x.reused || 0));
         const tps = x.t_gen > 0 ? (x.gen * 1000 / x.t_gen).toFixed(1).replace(".", ",") : "–";
         const pps = x.t_prompt > 0 ? Math.round(neu * 1000 / x.t_prompt) : "–";
-        const info = (x.t_load ? "Laden " + sec(x.t_load) + " s · " : "") + `Lesen ${neu} Tokens in ${sec(x.t_prompt)} s (${pps}/s${x.reused ? ", " + x.reused + " aus Zwischenspeicher" : ""}) · Schreiben ${x.gen} Tokens in ${sec(x.t_gen)} s (${tps}/s) · ${x.threads} Kerne${x.tmpl ? "" : " · ⚠ Notfall-Vorlage"}`;
+        const info = (x.t_load ? "Laden " + sec(x.t_load) + " s · " : "") + `Lesen ${neu} Tokens in ${sec(x.t_prompt)} s (${pps}/s${x.reused ? ", " + x.reused + " aus Zwischenspeicher" : ""}) · Schreiben ${x.gen} Tokens in ${sec(x.t_gen)} s (${tps}/s) · ${x.threads} Kerne · ${x.cpu || ""}${x.tmpl ? "" : " · ⚠ Notfall-Vorlage"}`;
         const d = document.createElement("div"); d.style.cssText = "margin-top:6px;font-size:.72em;opacity:.6"; d.textContent = "⏱ " + info;
         setTimeout(() => { if (bubble) bubble.appendChild(d); }, 60);
         ev("ki", "⏱ " + info);
@@ -973,7 +973,12 @@ ${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail<
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
     if (J.theme && J.theme.resize) J.theme.resize(W, H);
   }
+  let lastDraw = 0;
   function loop(now) {
+    // Während die KI im Handy rechnet: Animation nur ca. 8-mal pro Sekunde zeichnen, damit die KI mehr Rechenkraft hat
+    const lokal = (J.current && J.current.anbieter === "handy") || (J.settings && J.settings.anbieter === "handy");
+    if (lokal && J.state === "thinking" && now - lastDraw < 120) { requestAnimationFrame(loop); return; }
+    lastDraw = now;
     const S = J.S, dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000)); last = now;
     S.t += dt; S.dt = dt;
     const k = x => Math.min(1, dt * x);

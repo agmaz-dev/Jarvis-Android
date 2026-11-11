@@ -178,6 +178,70 @@ public class Actions {
         return ok(String.valueOf(best.loadLabel(pm)) + " geöffnet.");
     }
 
+    // ---------------------------------------------------------------- Kalender
+    private static long calendarId(Activity a) {
+        String[] proj = {android.provider.CalendarContract.Calendars._ID, android.provider.CalendarContract.Calendars.IS_PRIMARY,
+                android.provider.CalendarContract.Calendars.ACCOUNT_TYPE, android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL};
+        long best = -1; int bestScore = -1;
+        try (Cursor c = a.getContentResolver().query(android.provider.CalendarContract.Calendars.CONTENT_URI, proj,
+                android.provider.CalendarContract.Calendars.VISIBLE + "=1", null, null)) {
+            while (c != null && c.moveToNext()) {
+                if (c.getInt(3) < android.provider.CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) continue;
+                int sc = (c.getInt(1) == 1 ? 2 : 0) + ("com.google".equals(c.getString(2)) ? 1 : 0);
+                if (sc > bestScore) { bestScore = sc; best = c.getLong(0); }
+            }
+        }
+        return best;
+    }
+
+    static String calendarAdd(Activity a, String title, long start, long end, String where, boolean allDay) {
+        if (!has(a, Manifest.permission.WRITE_CALENDAR) || !has(a, Manifest.permission.READ_CALENDAR)) {
+            a.runOnUiThread(() -> a.requestPermissions(new String[]{Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR}, 22));
+            return fail("Ich brauche die Berechtigung für deinen Kalender. Bitte erlauben und den Befehl noch einmal sagen.");
+        }
+        long cal = calendarId(a);
+        if (cal < 0) return fail("Kein beschreibbarer Kalender gefunden.");
+        android.content.ContentValues v = new android.content.ContentValues();
+        v.put(android.provider.CalendarContract.Events.CALENDAR_ID, cal);
+        v.put(android.provider.CalendarContract.Events.TITLE, title);
+        if (where != null && !where.isEmpty()) v.put(android.provider.CalendarContract.Events.EVENT_LOCATION, where);
+        v.put(android.provider.CalendarContract.Events.DTSTART, start);
+        v.put(android.provider.CalendarContract.Events.DTEND, end);
+        v.put(android.provider.CalendarContract.Events.ALL_DAY, allDay ? 1 : 0);
+        v.put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, allDay ? "UTC" : java.util.TimeZone.getDefault().getID());
+        try {
+            a.getContentResolver().insert(android.provider.CalendarContract.Events.CONTENT_URI, v);
+            return ok("Termin eingetragen.");
+        } catch (Exception e) {
+            return fail("Termin konnte nicht eingetragen werden: " + e.getMessage());
+        }
+    }
+
+    static String calendarList(Activity a, long from, long to) {
+        if (!has(a, Manifest.permission.READ_CALENDAR)) return needPerm(a, Manifest.permission.READ_CALENDAR, "deinen Kalender");
+        JSONArray arr = new JSONArray();
+        android.net.Uri.Builder b = android.provider.CalendarContract.Instances.CONTENT_URI.buildUpon();
+        android.content.ContentUris.appendId(b, from);
+        android.content.ContentUris.appendId(b, to);
+        String[] proj = {android.provider.CalendarContract.Instances.TITLE, android.provider.CalendarContract.Instances.BEGIN,
+                android.provider.CalendarContract.Instances.END, android.provider.CalendarContract.Instances.ALL_DAY,
+                android.provider.CalendarContract.Instances.EVENT_LOCATION};
+        java.text.SimpleDateFormat df = new java.text.SimpleDateFormat("EEE dd.MM. HH:mm", Locale.GERMANY);
+        try (Cursor c = a.getContentResolver().query(b.build(), proj, null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC")) {
+            while (c != null && c.moveToNext() && arr.length() < 30) {
+                JSONObject j = new JSONObject();
+                j.put("titel", c.getString(0));
+                j.put("beginn", c.getInt(3) == 1 ? "ganztägig" : df.format(new java.util.Date(c.getLong(1))));
+                j.put("ende", c.getInt(3) == 1 ? "" : new java.text.SimpleDateFormat("HH:mm", Locale.GERMANY).format(new java.util.Date(c.getLong(2))));
+                if (c.getString(4) != null) j.put("ort", c.getString(4));
+                arr.put(j);
+            }
+            return new JSONObject().put("ok", true).put("termine", arr).toString();
+        } catch (Exception e) {
+            return fail("Kalender konnte nicht gelesen werden.");
+        }
+    }
+
     static String torch(Activity a, boolean on) {
         try {
             CameraManager cm = a.getSystemService(CameraManager.class);

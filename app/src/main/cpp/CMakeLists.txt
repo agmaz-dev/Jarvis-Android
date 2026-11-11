@@ -30,6 +30,8 @@ set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     # Snapdragon 8 Elite (Galaxy Z Fold 7) kann dotprod und i8mm – deutlich schneller bei 4-Bit-Modellen
     set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+i8mm+fp16" CACHE STRING "" FORCE)
+    # Optimierte Rechenkerne von ARM (schneller auf Snapdragon/Oryon)
+    set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
 endif()
 
 if(DEFINED ENV{LLAMA_SRC_DIR})

@@ -1,5 +1,6 @@
 // Jarvis: eigene KI auf dem Handy (llama.cpp über JNI)
 #include <jni.h>
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -46,6 +47,15 @@ static size_t utf8_valid_prefix(const std::string &s) {
     return n;
 }
 
+// Welche Rechen-Beschleuniger aktiv sind (nur die wichtigen, als kurzer Text)
+static std::string cpu_flags() {
+    std::string all = llama_print_system_info(), out;
+    for (const char *k : {"DOTPROD = 1", "MATMUL_INT8 = 1", "KLEIDIAI = 1", "REPACK = 1", "SVE = 1"}) {
+        if (all.find(k) != std::string::npos) { if (!out.empty()) out += ","; out += std::string(k).substr(0, std::string(k).find(' ')); }
+    }
+    return out.empty() ? "basic" : out;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_de_agmaz_jarvis_Llm_nativeLoad(JNIEnv *env, jclass, jstring jpath, jint nCtx, jint nThreads) {
     std::lock_guard<std::mutex> lk(g_mu);
@@ -62,8 +72,10 @@ Java_de_agmaz_jarvis_Llm_nativeLoad(JNIEnv *env, jclass, jstring jpath, jint nCt
     cp.n_ctx = nCtx > 0 ? nCtx : 4096;
     cp.n_batch = 512;
     cp.n_ubatch = 512;
-    cp.n_threads = nThreads > 0 ? nThreads : 6;
-    cp.n_threads_batch = cp.n_threads;
+    // Antwort schreiben: wenige Threads (Speicher ist der Engpass, mehr Threads stören sich gegenseitig)
+    // Eingabe lesen: mehr Threads
+    cp.n_threads = nThreads > 0 ? nThreads : 4;
+    cp.n_threads_batch = std::min(8, cp.n_threads + 2);
     cp.swa_full = true;   // damit der Gesprächsanfang wiederverwendet werden kann
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
     cp.type_k = GGML_TYPE_Q8_0;
@@ -219,8 +231,8 @@ Java_de_agmaz_jarvis_Llm_nativeGenerate(JNIEnv *env, jclass, jobjectArray roles,
     const int64_t t2 = ggml_time_us();
     char stats[512];
     snprintf(stats, sizeof(stats),
-             "{\"prompt\":%d,\"reused\":%d,\"t_prompt\":%lld,\"gen\":%d,\"t_gen\":%lld,\"tmpl\":%s,\"threads\":%d}",
+             "{\"prompt\":%d,\"reused\":%d,\"t_prompt\":%lld,\"gen\":%d,\"t_gen\":%lld,\"tmpl\":%s,\"threads\":%d,\"cpu\":\"%s\"}",
              (int) toks.size(), (int) reused, (long long) ((t1 - t0) / 1000), generated, (long long) ((t2 - t1) / 1000),
-             templ_ok ? "true" : "false", (int) llama_n_threads(g_ctx));
+             templ_ok ? "true" : "false", (int) llama_n_threads(g_ctx), cpu_flags().c_str());
     return env->NewStringUTF(stats);
 }
