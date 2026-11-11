@@ -316,14 +316,18 @@ public class MainActivity extends Activity {
             srEnd();
             return;
         }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            srActive = true;
-            js("sr", "error", "service-not-allowed");
-            srEnd();
-            return;
-        }
         if (recognizer == null) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            if (SpeechRecognizer.isRecognitionAvailable(this)) {
+                recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            } else if (Build.VERSION.SDK_INT >= 33 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+                recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(this);
+            } else {
+                srActive = true;
+                js("sr", "error", "service-not-allowed");
+                srEnd();
+                main.post(() -> android.widget.Toast.makeText(this, "Keine Spracherkennung gefunden. Bitte die Google-App installieren bzw. aktualisieren.", android.widget.Toast.LENGTH_LONG).show());
+                return;
+            }
             recognizer.setRecognitionListener(srListener);
         }
         if (srActive) { recognizer.cancel(); srActive = false; }

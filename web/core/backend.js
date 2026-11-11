@@ -885,7 +885,9 @@
   }
 
   /* ------------------------------------------------------------ Android: Spracherkennung über das Handy */
-  if (NATIVE && NATIVE.srStart && !window.SpeechRecognition && !window.webkitSpeechRecognition) {
+  // Wichtig: Die Android-WebView kennt "webkitSpeechRecognition", aber es funktioniert dort nicht.
+  // Deshalb in der App immer die Spracherkennung des Handys verwenden.
+  if (NATIVE && NATIVE.srStart) {
     let cur = null;
     class NativeSR {
       constructor() { this.lang = "de-DE"; this.continuous = false; this.interimResults = true; this.maxAlternatives = 1; this.onstart = this.onresult = this.onerror = this.onend = null; }
@@ -902,7 +904,10 @@
       else if (type === "error") r.onerror && r.onerror({ error: text });
       else if (type === "end") { r.onend && r.onend({}); }
     };
-    window.SpeechRecognition = window.webkitSpeechRecognition = NativeSR;
+    try { Object.defineProperty(window, "SpeechRecognition", { value: NativeSR, configurable: true, writable: true }); } catch (e) { }
+    try { Object.defineProperty(window, "webkitSpeechRecognition", { value: NativeSR, configurable: true, writable: true }); } catch (e) { }
+    // Das Mikrofon gehört der Spracherkennung des Handys; die Pegelanzeige nicht zusätzlich darauf zugreifen lassen
+    try { if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = () => Promise.reject(new Error("in der App nicht genutzt")); } catch (e) { }
   }
 
   /* ------------------------------------------------------------ Android: Sprachausgabe über das Handy */
