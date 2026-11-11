@@ -635,13 +635,13 @@
 <label><input type="radio" name="anb" value="ollama" data-k="anbieter"><span><b>Lokal · Ollama</b><small>Kostenlos, offline, ohne Schlüssel</small></span></label>
 <label><input type="radio" name="anb" value="claude" data-k="anbieter"><span><b>Claude · API</b><small>Anthropic, mit Websuche</small></span></label>
 <label><input type="radio" name="anb" value="openai" data-k="anbieter"><span><b>OpenAI-kompatibel</b><small>OpenAI, Groq, OpenRouter, LM Studio …</small></span></label></div>
-<div class="box"><h4>Ollama (lokal oder Cloud)</h4><div class="row"><label>Adresse<small>Auf dem Gerät: http://localhost:11434<br>Ollama Cloud: https://ollama.com</small></label><input type="url" data-k="ollama_url"></div>
+<div class="box" data-box="ollama"><h4>Ollama (lokal oder Cloud)</h4><div class="row"><label>Adresse<small>Auf dem Gerät: http://localhost:11434<br>Ollama Cloud: https://ollama.com</small></label><input type="url" data-k="ollama_url"></div>
 <div class="row"><label>API-Schlüssel<small>nur für Ollama Cloud, sonst leer</small></label><input type="password" data-k="ollama_key" placeholder="leer lassen bei lokal" autocomplete="off"></div>
 <div class="row"><label></label><div class="inl"><span class="res" data-res="ollama"></span><button class="jv-btn" data-test="ollama">Verbindung testen</button></div></div></div>
-<div class="box"><h4>Claude (Anthropic)</h4><div class="row"><label>API-Schlüssel<small>beginnt mit sk-ant-…</small></label><input type="password" data-k="claude_key" placeholder="sk-ant-…" autocomplete="off"></div>
+<div class="box" data-box="claude"><h4>Claude (Anthropic)</h4><div class="row"><label>API-Schlüssel<small>beginnt mit sk-ant-…</small></label><input type="password" data-k="claude_key" placeholder="sk-ant-…" autocomplete="off"></div>
 <div class="row"><label>Websuche</label>${sw("websuche", "Claude darf im Web nachsehen (kostet etwas mehr)")}</div>
 <div class="row"><label></label><div class="inl"><span class="res" data-res="claude"></span><button class="jv-btn" data-test="claude">Verbindung testen</button></div></div></div>
-<div class="box"><h4>OpenAI-kompatibel</h4><div class="row"><label>Basis-Adresse<small>OpenAI: https://api.openai.com/v1<br>LM Studio: http://localhost:1234/v1</small></label><input type="url" data-k="openai_url"></div>
+<div class="box" data-box="openai"><h4>OpenAI-kompatibel</h4><div class="row"><label>Basis-Adresse<small>OpenAI: https://api.openai.com/v1<br>LM Studio: http://localhost:1234/v1</small></label><input type="url" data-k="openai_url"></div>
 <div class="row"><label>API-Schlüssel<small>bei LM Studio leer lassen</small></label><input type="password" data-k="openai_key" placeholder="sk-…" autocomplete="off"></div>
 <div class="row"><label></label><div class="inl"><span class="res" data-res="openai"></span><button class="jv-btn" data-test="openai">Verbindung testen</button></div></div></div>
 <div class="row"><label>Antwortlänge</label><select data-k="antwortlaenge"><option value="kurz">Kurz (1 bis 3 Sätze)</option><option value="normal">Normal</option><option value="ausfuehrlich">Ausführlich</option></select></div>
@@ -793,6 +793,12 @@
     fillLokal(); bindValues(box); fillVoices(); renderRoutines(J.settings.routinen || []); renderMemory(); renderThemes();
     const upd = () => { const pl = $("jv-privlist"); if (pl) pl.innerHTML = privList(Object.assign({}, J.settings, readValues(box))); };
     box.addEventListener("change", upd); upd();
+    /* Anbieter antippen: passenden Kasten zeigen (darunter) und hervorheben */
+    box.querySelectorAll('input[name="anb"]').forEach(r => r.addEventListener("change", () => {
+      box.querySelectorAll("[data-box]").forEach(x => x.style.outline = "");
+      const t = box.querySelector('[data-box="' + r.value + '"]');
+      if (t) { t.style.outline = "2px solid #4fb6ff"; t.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    }));
     box.classList.add("on"); micSync();
     box.onclick = e => { if (e.target === box) closeSettings(); };
     box.querySelectorAll("[data-close]").forEach(b => b.onclick = closeSettings);
