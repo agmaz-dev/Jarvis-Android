@@ -3,8 +3,7 @@ package de.agmaz.jarvis;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.database.Cursor;
-import android.net.Uri;
+import android.content.Intent;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -64,29 +63,14 @@ public class Llm {
         return null;
     }
 
-    private DownloadManager dm() { return (DownloadManager) ctx.getSystemService(Context.DOWNLOAD_SERVICE); }
-
-    /** Status eines Downloads: [status, geladen, gesamt] oder null */
-    private long[] dlState(long id) {
-        try (Cursor c = dm().query(new DownloadManager.Query().setFilterById(id))) {
-            if (c == null || !c.moveToFirst()) return null;
-            return new long[]{
-                    c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)),
-                    c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
-                    c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
-                    c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))};
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     boolean installed(String id) {
         File f = file(id);
-        if (!f.exists() || f.length() < 200_000_000L) return false;
-        long dl = prefs.getLong("dl_" + id, -1);
-        if (dl < 0) return true;
-        long[] st = dlState(dl);
-        return st == null || st[0] == DownloadManager.STATUS_SUCCESSFUL;
+        return f.exists() && f.length() > 200_000_000L && !(id.equals(DownloadService.id) && isBusy());
+    }
+
+    static boolean isBusy() {
+        String st = DownloadService.state;
+        return "connecting".equals(st) || "running".equals(st) || "retry".equals(st);
     }
 
     String status() {
@@ -101,18 +85,19 @@ public class Llm {
                 j.put("info", m[3]);
                 boolean inst = installed(m[0]);
                 j.put("installed", inst);
-                long dl = prefs.getLong("dl_" + m[0], -1);
-                if (!inst && dl >= 0) {
-                    long[] st = dlState(dl);
-                    if (st != null) {
-                        int s = (int) st[0];
-                        j.put("downloading", s == DownloadManager.STATUS_RUNNING || s == DownloadManager.STATUS_PENDING || s == DownloadManager.STATUS_PAUSED);
-                        j.put("paused", s == DownloadManager.STATUS_PAUSED);
-                        j.put("failed", s == DownloadManager.STATUS_FAILED);
-                        j.put("reason", st[3]);
-                        j.put("done", st[1]);
-                        j.put("total", st[2]);
-                    }
+                if (!inst && m[0].equals(DownloadService.id)) {
+                    String st = DownloadService.state;
+                    j.put("downloading", isBusy());
+                    j.put("state", st);
+                    j.put("paused", "retry".equals(st));
+                    j.put("failed", "failed".equals(st));
+                    j.put("error", DownloadService.error);
+                    j.put("done", DownloadService.done);
+                    j.put("total", DownloadService.total);
+                    j.put("bps", DownloadService.bps);
+                } else if (!inst) {
+                    File part = new File(file(m[0]).getPath() + ".part");
+                    if (part.exists() && part.length() > 0) j.put("partial", part.length());
                 }
                 arr.put(j);
             }
@@ -125,56 +110,36 @@ public class Llm {
         return o.toString();
     }
 
-    /** Erste erreichbare Adresse suchen (läuft im Hintergrund-Thread). */
-    private static String reachable(String[] m) {
-        for (int i = 4; i < m.length; i++) {
-            HttpURLConnection c = null;
-            try {
-                c = (HttpURLConnection) new URL(m[i]).openConnection();
-                c.setRequestMethod("HEAD");
-                c.setInstanceFollowRedirects(true);
-                c.setConnectTimeout(10000);
-                c.setReadTimeout(10000);
-                int code = c.getResponseCode();
-                if (code >= 200 && code < 400) return m[i];
-            } catch (Exception ignored) {
-            } finally {
-                if (c != null) c.disconnect();
-            }
-        }
-        return null;
-    }
-
     /** Download starten. Liefert null bei Erfolg, sonst eine Fehlermeldung. */
     String download(String id) {
         String[] m = find(id);
         if (m == null) return "Unbekanntes Modell.";
+        if (isBusy()) return "Es läuft schon ein Download.";
         double needGb = Double.parseDouble(m[2]) + 0.5;
         if (dir().getUsableSpace() / 1e9 < needGb) return "Nicht genug freier Speicher (" + m[2] + " GB nötig).";
-        String url = reachable(m);
-        if (url == null) return "Die Modell-Datei ist gerade nicht erreichbar. Bitte später noch einmal versuchen.";
-        File f = file(id);
-        //noinspection ResultOfMethodCallIgnored
-        f.delete();
-        DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url))
-                .setTitle("Jarvis: " + m[1])
-                .setDescription("Eigene KI für Jarvis (" + m[2] + " GB)")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationUri(Uri.fromFile(f))
-                .setAllowedOverMetered(true)
-                .setAllowedOverRoaming(false);
-        long dl = dm().enqueue(r);
-        prefs.edit().putLong("dl_" + id, dl).apply();
+        // alte Downloads über den Android-Downloader aufräumen (frühere Versionen)
+        long old = prefs.getLong("dl_" + id, -1);
+        if (old >= 0) {
+            try { ((DownloadManager) ctx.getSystemService(Context.DOWNLOAD_SERVICE)).remove(old); } catch (Exception ignored) { }
+            prefs.edit().remove("dl_" + id).apply();
+        }
+        Intent i = new Intent(ctx, DownloadService.class).putExtra("id", id);
+        if (android.os.Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i); else ctx.startService(i);
         return null;
     }
 
     void delete(String id) {
-        long dl = prefs.getLong("dl_" + id, -1);
-        if (dl >= 0) { try { dm().remove(dl); } catch (Exception ignored) { } }
-        prefs.edit().remove("dl_" + id).apply();
+        if (id.equals(DownloadService.id) && isBusy()) DownloadService.cancel = true;
+        long old = prefs.getLong("dl_" + id, -1);
+        if (old >= 0) {
+            try { ((DownloadManager) ctx.getSystemService(Context.DOWNLOAD_SERVICE)).remove(old); } catch (Exception ignored) { }
+            prefs.edit().remove("dl_" + id).apply();
+        }
         if (id.equals(loaded)) { nativeUnload(); loaded = null; }
         //noinspection ResultOfMethodCallIgnored
         file(id).delete();
+        //noinspection ResultOfMethodCallIgnored
+        new File(file(id).getPath() + ".part").delete();
     }
 
     /** Modell laden (dauert einige Sekunden). Liefert null bei Erfolg, sonst Fehlermeldung. */

@@ -622,10 +622,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void llmDownload(final String id) {
             if (llm == null) return;
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                main.post(() -> requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 9));
+            }
             pool.execute(() -> {
                 String err = llm.download(id);
                 js("llm", "dl", err == null ? "" : err);
-                if (err == null) toast("Download gestartet – den Fortschritt siehst du auch in der Benachrichtigung.");
+                if (err == null) toast("Download gestartet.");
             });
         }
 

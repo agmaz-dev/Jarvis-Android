@@ -831,11 +831,13 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
           const rest = (total - done) / prev.bps; eta = rest > 90 ? " · noch ca. " + Math.ceil(rest / 60) + " Min" : " · gleich fertig";
         } else if (prev && prev.bps) eta = " · noch ca. " + Math.ceil((total - done) / prev.bps / 60) + " Min";
         llmSpeed[m.id] = { t: now, d: done, bps: prev && prev.bps };
-        right = `<div style="flex:1;min-width:180px"><div class="res">${m.paused ? "pausiert (wartet auf WLAN/Netz)" : "lädt"} · <b>${pct} %</b> · ${gb(done)} von ${gb(total)} GB${m.paused ? "" : eta}</div>`
+        const stTxt = m.state === "connecting" ? "verbinde mit dem Server" : m.state === "retry" ? "Verbindung unterbrochen, neuer Versuch gleich" + (m.error ? " (" + esc(m.error) + ")" : "") : "lädt";
+        if (m.bps > 0) { llmSpeed[m.id] = { t: Date.now(), d: done, bps: m.bps }; eta = " · " + (m.bps / 1e6).toFixed(1).replace(".", ",") + " MB/s · noch ca. " + Math.max(1, Math.ceil((total - done) / m.bps / 60)) + " Min"; }
+        right = `<div style="flex:1;min-width:180px"><div class="res">${stTxt} · <b>${pct} %</b> · ${gb(done)} von ${gb(total)} GB${m.paused ? "" : eta}</div>`
           + `<div style="height:8px;border-radius:4px;background:rgba(255,255,255,.12);margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#4fb6ff;transition:width .6s"></div></div></div>`
           + `<button class="jv-btn" data-llmdel="${m.id}">Abbrechen</button>`;
       }
-      else right = `${m.failed ? '<span class="res bad">Download fehlgeschlagen</span>' : ""}<button class="jv-btn" data-llmdl="${m.id}">Herunterladen (${String(m.gb).replace(".", ",")} GB)</button>`;
+      else right = `${m.failed ? '<span class="res bad">Download fehlgeschlagen' + (m.error ? ": " + esc(m.error) : "") + '</span>' : ""}${m.partial ? '<span class="res">' + gb(m.partial) + ' GB schon geladen</span>' : ""}<button class="jv-btn" data-llmdl="${m.id}">${m.partial ? "Weiter herunterladen" : "Herunterladen (" + String(m.gb).replace(".", ",") + " GB)"}</button>`;
       return `<div class="row"><label>${esc(m.name)}<small>${esc(m.info)}</small></label><div class="inl">${right}</div></div>`;
     }).join("") + `<p class="hint" style="margin:6px 0 0">Freier Speicher: ${String(Math.round(st.free_gb || 0))} GB · App-Version ${esc((window.JarvisNative.appVersion && window.JarvisNative.appVersion()) || "?")}</p>`;
     box.querySelectorAll("[data-llmdl]").forEach(b => b.onclick = () => { b.disabled = true; b.textContent = "startet …"; window.JarvisNative.llmDownload(b.dataset.llmdl); setTimeout(renderLlm, 1500); });
