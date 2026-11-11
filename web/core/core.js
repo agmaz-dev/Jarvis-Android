@@ -805,7 +805,7 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
     out.routinen = readRoutines();
     return out;
   }
-  let llmT = 0;
+  let llmT = 0; const llmSpeed = {};
   function renderLlm() {
     clearTimeout(llmT);
     const box = $("jv-llm"); if (!box || !$("jv-set").classList.contains("on")) return;
@@ -815,7 +815,21 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
     box.innerHTML = (st.models || []).map(m => {
       let right;
       if (m.installed) right = `<span class="res ok">✓ installiert${st.loaded === m.id ? " · geladen" : ""}</span><button class="jv-btn" data-llmdel="${m.id}">Löschen</button>`;
-      else if (m.downloading) right = `<span class="res">${m.paused ? "pausiert (wartet auf Netz)" : "lädt"} ${m.total > 0 ? Math.floor(100 * m.done / m.total) + " % · " + gb(m.done) + " / " + gb(m.total) + " GB" : "…"}</span><button class="jv-btn" data-llmdel="${m.id}">Abbrechen</button>`;
+      else if (m.downloading) {
+        // Manche Server nennen die Gesamtgröße nicht – dann mit der bekannten Modellgröße rechnen
+        const total = m.total > 0 ? m.total : parseFloat(m.gb) * 1e9, done = m.done || 0;
+        const pct = Math.min(99, Math.floor(100 * done / total));
+        const now = Date.now(), prev = llmSpeed[m.id];
+        let eta = "";
+        if (prev && now > prev.t && done > prev.d) {
+          const bps = (done - prev.d) / ((now - prev.t) / 1000); prev.bps = prev.bps ? prev.bps * 0.7 + bps * 0.3 : bps;
+          const rest = (total - done) / prev.bps; eta = rest > 90 ? " · noch ca. " + Math.ceil(rest / 60) + " Min" : " · gleich fertig";
+        } else if (prev && prev.bps) eta = " · noch ca. " + Math.ceil((total - done) / prev.bps / 60) + " Min";
+        llmSpeed[m.id] = { t: now, d: done, bps: prev && prev.bps };
+        right = `<div style="flex:1;min-width:180px"><div class="res">${m.paused ? "pausiert (wartet auf WLAN/Netz)" : "lädt"} · <b>${pct} %</b> · ${gb(done)} von ${gb(total)} GB${m.paused ? "" : eta}</div>`
+          + `<div style="height:8px;border-radius:4px;background:rgba(255,255,255,.12);margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#4fb6ff;transition:width .6s"></div></div></div>`
+          + `<button class="jv-btn" data-llmdel="${m.id}">Abbrechen</button>`;
+      }
       else right = `${m.failed ? '<span class="res bad">Download fehlgeschlagen</span>' : ""}<button class="jv-btn" data-llmdl="${m.id}">Herunterladen (${String(m.gb).replace(".", ",")} GB)</button>`;
       return `<div class="row"><label>${esc(m.name)}<small>${esc(m.info)}</small></label><div class="inl">${right}</div></div>`;
     }).join("") + `<p class="hint" style="margin:6px 0 0">Freier Speicher: ${String(Math.round(st.free_gb || 0))} GB</p>`;
@@ -825,7 +839,7 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
       window.JarvisNative.llmDelete(b.dataset.llmdel); setTimeout(() => { renderLlm(); loadModels(); }, 800);
     });
     const busy = (st.models || []).some(m => m.downloading);
-    if (busy) llmT = setTimeout(renderLlm, 2000);
+    if (busy) llmT = setTimeout(renderLlm, 1500);
     else if (box.dataset.wasBusy) { delete box.dataset.wasBusy; loadModels(); }
     if (busy) box.dataset.wasBusy = 1;
   }
