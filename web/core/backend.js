@@ -624,7 +624,9 @@
       }
     }
     if (typ === "kalender_eintragen" || typ === "termin") {
-      const d = parseDatum(a.datum);
+      // Kleine Modelle rechnen Wochentage oft falsch um: Steht im Satz des Nutzers ein Tag, gilt der
+      const ausSatz = parseDatum((R(String.raw`\b(heute|übermorgen|uebermorgen|morgen|(nächsten?\s+)?(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)|\d{1,2}\.\d{1,2}\.?(\d{2,4})?)\b`, "i").exec(letzterSatz) || [""])[0]);
+      const d = ausSatz || parseDatum(a.datum);
       if (!d) return { say: "Für welchen Tag soll ich den Termin eintragen?" };
       const tm = /(\d{1,2})(?:[:.](\d{2}))?/.exec(String(a.zeit || ""));
       let start, ende, ganz = false;
@@ -644,6 +646,7 @@
     return { say: "Diese Aktion kenne ich nicht." };
   }
   // "heute", "morgen", "übermorgen", "samstag", "2026-11-14", "14.11."
+  let letzterSatz = "";
   function parseDatum(x) {
     const t = String(x || "").toLowerCase().trim(), now = new Date(), base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     if (!t) return null;
@@ -906,7 +909,7 @@
       "und unten noch keine INTERNETSUCHE steht, antworte NUR mit genau einer Zeile: [suche: kurze Suchanfrage]. Sonst nie.");
     else if (websuche === "done") p.push("Unten stehen frische Daten (Internetsuche oder Ergebnis einer Aktion auf dem Handy). Verlass dich darauf statt auf dein älteres Wissen. Keine weitere Suche und keine weitere Aktion.");
     else p.push("Du hast keinen Internetzugang. Für aktuelle Ereignisse sag ehrlich, dass dein Wissen einen Stand hat.");
-    if (HAS_ACT && websuche !== "done" && kompakt) p.push('Handy-Aufgaben: antworte NUR mit einer Zeile [aktion: JSON]. typ: mail_liste, mail_lesen{nr}, mail_senden{an,betreff,text}, mail_antworten{nr,text}, sms{wer,text}, whatsapp{wer,text}, anrufen{wer}, navigation{ziel}, app{name}, wecker{zeit}, timer{minuten}, kalender_eintragen{titel,datum,zeit,ort}, kalender_liste{datum,tage}. datum als JJJJ-MM-TT oder "morgen". Beispiel: [aktion: {"typ":"sms","wer":"Ahmet","text":"Ich komme später."}] Texte vollständig im Namen des Nutzers formulieren.');
+    if (HAS_ACT && websuche !== "done" && kompakt) p.push('Handy-Aufgaben: antworte NUR mit einer Zeile [aktion: JSON]. typ: mail_liste, mail_lesen{nr}, mail_senden{an,betreff,text}, mail_antworten{nr,text}, sms{wer,text}, whatsapp{wer,text}, anrufen{wer}, navigation{ziel}, app{name}, wecker{zeit}, timer{minuten}, kalender_eintragen{titel,datum,zeit,ort}, kalender_liste{datum,tage}. datum genau mit den Worten des Nutzers (z. B. "samstag", "morgen", "14.11."), nicht selbst umrechnen. Beispiel: [aktion: {"typ":"sms","wer":"Ahmet","text":"Ich komme später."}] Texte vollständig im Namen des Nutzers formulieren.');
     else if (HAS_ACT && websuche !== "done") p.push("WERKZEUGE auf dem Handy des Nutzers. Wenn er etwas erledigt haben will, antworte NUR mit genau einer Zeile [aktion: JSON], ohne weiteren Text. Möglich:\n" +
       '[aktion: {"typ":"mail_liste","ungelesen":true}] E-Mails abrufen\n' +
       '[aktion: {"typ":"mail_lesen","nr":1}] E-Mail Nummer aus der letzten Liste lesen (oder "von":"Name")\n' +
@@ -914,7 +917,7 @@
       '[aktion: {"typ":"mail_antworten","nr":1,"text":"fertiger Text"}] (ohne nr: auf die zuletzt gelesene)\n' +
       '[aktion: {"typ":"sms","wer":"Name oder Nummer","text":"..."}] · [aktion: {"typ":"whatsapp","wer":"...","text":"..."}] · [aktion: {"typ":"anrufen","wer":"..."}]\n' +
       '[aktion: {"typ":"navigation","ziel":"..."}] · [aktion: {"typ":"app","name":"..."}] · [aktion: {"typ":"wecker","zeit":"07:30"}] · [aktion: {"typ":"timer","minuten":10}] · [aktion: {"typ":"taschenlampe","an":true}]\n' +
-      '[aktion: {"typ":"kalender_eintragen","titel":"Zahnarzt","datum":"2026-11-14","zeit":"10:00","ort":"..."}] (datum JJJJ-MM-TT, ohne zeit = ganztägig) · [aktion: {"typ":"kalender_liste","datum":"morgen","tage":1}]\n' +
+      '[aktion: {"typ":"kalender_eintragen","titel":"Zahnarzt","datum":"samstag","zeit":"10:00","ort":"..."}] (datum mit den Worten des Nutzers wie "samstag" oder "14.11.", nicht umrechnen; ohne zeit = ganztägig) · [aktion: {"typ":"kalender_liste","datum":"morgen","tage":1}]\n' +
       "E-Mails und Nachrichten formulierst du vollständig, freundlich und passend im Namen des Nutzers" + (s.nutzer ? " (" + s.nutzer + ")" : "") + ". Jarvis fragt vor dem Senden selbst nach. Erfinde keine Adressen.");
     if (mitGedaechtnis) p.push("GEDÄCHTNIS (was du dir über deinen Nutzer gemerkt hast):\n" + (memText(kompakt ? 1500 : 4000) || "(noch leer)"));
     else p.push("GEDÄCHTNIS: Aus Datenschutzgründen bleibt das Gedächtnis auf dem Gerät des Nutzers und wird dir nicht geschickt. " +
@@ -1084,6 +1087,7 @@
     if (!msgs.length) return emit({ t: "error", message: "Leere Nachricht." });
     const text = msgs[msgs.length - 1].content, u = text.toLowerCase();
     const sag = t => { emit({ t: "delta", text: t }); return emit({ t: "done", text: t }); };
+    letzterSatz = text;
 
     // Offene Rückfrage ("Soll ich die E-Mail senden?") per Ja/Nein beantworten
     const pending = LS.get("pending", null);
