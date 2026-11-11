@@ -7,7 +7,7 @@
   "use strict";
   const VERSION = "1.1-android";
   const NATIVE = window.JarvisNative || null;
-  const SECRET = ["claude_key", "openai_key", "eleven_key", "ollama_key"];
+  const SECRET = ["claude_key", "openai_key", "eleven_key", "ollama_key", "mail_passwort"];
   const MASK = "••••";
   const ANTHROPIC = "https://api.anthropic.com";
 
@@ -23,6 +23,7 @@
     auto_merken: true, ort: "Berlin", briefing_beim_start: false, oberflaeche: "vortex",
     chat_sichtbar: true, sounds: true,
     internetsuche: true, suchmaschine: "google",
+    mail_adresse: "", mail_passwort: "", aktionen_bestaetigen: true,
     strikt_lokal: false, privat_weiche: true, gedaechtnis_cloud: false, privat_woerter: "", lokal_modell: "",
     routinen: [
       { satz: "guten morgen", aktion: "briefing", wert: "" },
@@ -81,7 +82,7 @@
     for (const [k, v0] of Object.entries(data || {})) {
       if (!(k in DEFAULTS)) continue;
       let v = v0;
-      if (SECRET.includes(k)) { v = String(v || "").trim(); if (v.startsWith(MASK)) continue; }
+      if (SECRET.includes(k)) { v = String(v || "").trim(); if (v.startsWith(MASK)) continue; if (k === "mail_passwort") v = v.replace(/\s+/g, ""); }
       const d = DEFAULTS[k];
       try {
         if (typeof d === "boolean") v = !!v;
@@ -499,6 +500,161 @@
     return { quelle, results, ctx };
   }
 
+  /* ------------------------------------------------------------ Werkzeuge: E-Mail und Handy-Aktionen (nur in der App) */
+  const ACT_CB = {}; let actId = 0;
+  window.__jvNative.act = function (id, json) {
+    const f = ACT_CB[id]; if (!f) return; delete ACT_CB[id];
+    let d; try { d = JSON.parse(json); } catch (e) { d = { ok: false, msg: "Antwort unlesbar" }; } f(d);
+  };
+  const HAS_ACT = !!(NATIVE && NATIVE.act);
+  function nativeAct(name, args, timeoutMs) {
+    return new Promise(res => {
+      if (!HAS_ACT) return res({ ok: false, msg: "Das geht nur in der Android-App." });
+      const id = "a" + (++actId);
+      const to = setTimeout(() => { delete ACT_CB[id]; res({ ok: false, msg: "Zeitüberschreitung" }); }, timeoutMs || 60000);
+      ACT_CB[id] = d => { clearTimeout(to); res(d); };
+      NATIVE.act(id, name, JSON.stringify(args || {}));
+    });
+  }
+  function mailCreds(s) {
+    if (!s.mail_adresse || !s.mail_passwort) return null;
+    return { user: s.mail_adresse, pass: s.mail_passwort };
+  }
+  const MAIL_FEHLT = "E-Mail ist noch nicht eingerichtet. Sag dem Nutzer: Einstellungen, Automation, E-Mail-Adresse und App-Passwort eintragen.";
+  const istNummer = w => /^[+0-9][0-9 ()\/-]{5,}$/.test(String(w || "").trim());
+  const istMail = w => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(String(w || "").trim());
+  async function kontakt(wer, feld) {
+    wer = String(wer || "").trim().replace(/^(an|bei|mit)\s+/i, "");
+    if (feld === "telefon" && istNummer(wer)) return { ok: true, name: wer, wert: wer.replace(/[^0-9+]/g, "") };
+    if (feld === "email" && istMail(wer)) return { ok: true, name: wer, wert: wer };
+    const r = await nativeAct("kontakte", { name: wer });
+    if (!r.ok) return { ok: false, msg: r.msg || "Kontakte nicht lesbar." };
+    const hit = (r.kontakte || []).find(k => (k[feld] || []).length);
+    if (!hit) return { ok: false, msg: (r.kontakte || []).length ? `Bei „${wer}“ ist keine ${feld === "email" ? "E-Mail-Adresse" : "Telefonnummer"} gespeichert.` : `Keinen Kontakt „${wer}“ gefunden.` };
+    return { ok: true, name: hit.name, wert: hit[feld][0] };
+  }
+  function mailListe() { return LS.get("mails_last", []); }
+  async function mailFinden(args, s) {
+    let list = mailListe();
+    const nr = parseInt(args.nr, 10);
+    if (nr > 0 && list[nr - 1]) return list[nr - 1];
+    const q = norm(args.von || args.betreff || args.suche || "");
+    if (!list.length || q) {
+      const c = mailCreds(s); if (!c) return null;
+      const r = await nativeAct("mail_liste", Object.assign({ anzahl: 20, ungelesen: false }, c));
+      if (r.ok) { list = r.mails || []; LS.set("mails_last", list); }
+    }
+    if (q) return list.find(m => norm(m.von + " " + m.betreff).includes(q)) || null;
+    return list[0] || null;
+  }
+  // Ergebnis: { ctx } = Daten für eine zweite KI-Antwort, { say } = direkte Antwort, { confirm } = erst nachfragen
+  async function werkzeug(a, s, emit) {
+    const typ = a.typ || a.name || a.aktion;
+    const ev = text => emit({ t: "action", typ: "status", text, leise: true });
+    switch (typ) {
+      case "mail_liste": {
+        const c = mailCreds(s); if (!c) return { ctx: MAIL_FEHLT };
+        ev("E-Mails werden abgerufen …");
+        const ung = a.ungelesen !== false;
+        const r = await nativeAct("mail_liste", Object.assign({ anzahl: Math.min(15, a.anzahl || (ung ? 8 : 5)), ungelesen: ung }, c));
+        if (!r.ok) return { ctx: "E-Mail-Abruf fehlgeschlagen: " + (r.fehler || r.msg) + ". Sag das dem Nutzer." };
+        LS.set("mails_last", r.mails || []);
+        if (!(r.mails || []).length) return { ctx: ung ? "Es gibt keine ungelesenen E-Mails. Sag das kurz." : "Der Posteingang ist leer." };
+        return {
+          ctx: `E-MAILS (${ung ? "ungelesen" : "neueste"}, insgesamt ${r.ungelesen} ungelesen):\n` + r.mails.map((m, i) => `${i + 1}) von ${m.von} · „${m.betreff}“ · ${m.datum}`).join("\n") +
+            "\nFasse kurz zusammen (Absender und Thema, wichtigste zuerst). Erwähne die Nummern, damit der Nutzer sagen kann: lies Nummer 2."
+        };
+      }
+      case "mail_lesen": {
+        const c = mailCreds(s); if (!c) return { ctx: MAIL_FEHLT };
+        const m = await mailFinden(a, s);
+        if (!m) return { ctx: "Diese E-Mail habe ich nicht gefunden. Sag das ehrlich." };
+        ev("E-Mail wird geöffnet …");
+        const r = await nativeAct("mail_lesen", Object.assign({ uid: m.uid }, c));
+        if (!r.ok) return { ctx: "E-Mail konnte nicht geöffnet werden: " + (r.fehler || r.msg) };
+        LS.set("mail_offen", { uid: r.uid, von: r.von, betreff: r.betreff });
+        return {
+          ctx: `E-MAIL von ${r.von}, Betreff „${r.betreff}“${(r.anhaenge || []).length ? ", Anhänge: " + r.anhaenge.join(", ") : ""}:\n${String(r.text || "").slice(0, 4000)}\n` +
+            "Gib den Inhalt verständlich wieder (bei langen Mails zusammengefasst). Frag am Ende kurz, ob du antworten sollst."
+        };
+      }
+      case "mail_senden": {
+        const c = mailCreds(s); if (!c) return { ctx: MAIL_FEHLT };
+        const k = await kontakt(a.an, "email");
+        if (!k.ok) return { say: k.msg + " Nenn mir bitte die E-Mail-Adresse." };
+        const args = { an: k.wert, betreff: a.betreff || "", text: a.text || "" };
+        return { confirm: { name: "mail_senden", args, text: `E-Mail an ${k.name}${k.name !== k.wert ? " (" + k.wert + ")" : ""}, Betreff „${args.betreff}“: ${args.text}` } };
+      }
+      case "mail_antworten": {
+        const c = mailCreds(s); if (!c) return { ctx: MAIL_FEHLT };
+        let m = (a.nr || a.von) ? await mailFinden(a, s) : LS.get("mail_offen", null);
+        if (!m) m = await mailFinden(a, s);
+        if (!m) return { say: "Auf welche E-Mail soll ich antworten? Sag zum Beispiel: Antworte auf Nummer 1." };
+        const args = { antwort_uid: m.uid, text: a.text || "" };
+        return { confirm: { name: "mail_senden", args, text: `Antwort an ${m.von} zu „${m.betreff}“: ${args.text}` } };
+      }
+      case "sms": case "whatsapp": {
+        const k = await kontakt(a.wer || a.an, "telefon");
+        if (!k.ok) return { say: k.msg };
+        const args = { nummer: k.wert, text: a.text || "" };
+        if (typ === "whatsapp") { const r = await nativeAct("whatsapp", args); return { say: r.ok ? `WhatsApp an ${k.name} ist vorbereitet. Du musst nur noch auf Senden tippen.` : r.msg }; }
+        return { confirm: { name: "sms", args, text: `SMS an ${k.name}: ${args.text}` } };
+      }
+      case "anrufen": {
+        const k = await kontakt(a.wer || a.an, "telefon");
+        if (!k.ok) return { say: k.msg };
+        const r = await nativeAct("anrufen", { nummer: k.wert });
+        return { say: r.ok ? `Ich rufe ${k.name} an.` : r.msg };
+      }
+      case "navigation": { const r = await nativeAct("navigation", { ziel: a.ziel || a.ort || "" }); return { say: r.ok ? `Route nach ${a.ziel || a.ort} ist gestartet.` : r.msg }; }
+      case "app": { const r = await nativeAct("app", { name: a.name || a.app || "" }); return { say: r.msg, fail: !r.ok }; }
+      case "taschenlampe": { const r = await nativeAct("taschenlampe", { an: a.an !== false }); return { say: r.msg }; }
+      case "wecker": {
+        const m = /(\d{1,2})(?:[:.](\d{2}))?/.exec(String(a.zeit || ""));
+        if (!m) return { say: "Für wann soll ich den Wecker stellen?" };
+        const r = await nativeAct("wecker", { h: +m[1], m: +(m[2] || 0), text: a.text || "" });
+        return { say: r.msg };
+      }
+      case "timer": {
+        const sek = Math.round((+a.minuten || 0) * 60 + (+a.sekunden || 0));
+        if (!sek) return { say: "Wie lange soll der Timer laufen?" };
+        const r = await nativeAct("timer", { sek, text: a.text || "" });
+        return { say: r.ok ? `Timer über ${sek >= 60 ? Math.round(sek / 60) + " Minuten" : sek + " Sekunden"} läuft.` : r.msg };
+      }
+    }
+    return { say: "Diese Aktion kenne ich nicht." };
+  }
+  async function ausfuehren(p, s) {
+    if (p.name === "mail_senden") {
+      const c = mailCreds(s); if (!c) return "E-Mail ist nicht eingerichtet.";
+      const r = await nativeAct("mail_senden", Object.assign({}, p.args, c), 90000);
+      return r.ok ? "Erledigt, die E-Mail ist gesendet." : "Senden fehlgeschlagen: " + (r.fehler || r.msg);
+    }
+    if (p.name === "sms") { const r = await nativeAct("sms", p.args); return r.ok ? "Erledigt, die SMS ist raus." : r.msg; }
+    return "Unbekannte Aktion.";
+  }
+  // Häufige Befehle ohne KI erkennen (schneller und zuverlässiger, auch mit kleinen Modellen)
+  function schnellbefehl(u, orig) {
+    if (!HAS_ACT) return null;
+    orig = orig || u;
+    let m;
+    if (R(String.raw`\b(lies|les|zeig|check|prüf|pruef|abrufen|hab ich|habe ich|gibt es|sind)\b`).test(u) && R(String.raw`\b(e-?mails?|mails?|posteingang|nachrichten im postfach)\b`).test(u)) {
+      if ((m = R(String.raw`\b(nummer|nr\.?|mail)\s*(\d+)\b`).exec(u))) return { typ: "mail_lesen", nr: +m[2] };
+      return { typ: "mail_liste", ungelesen: !R(String.raw`\b(alle|letzten|neuesten)\b`).test(u) };
+    }
+    if ((m = R(String.raw`\blies\b.*\b(nummer|nr\.?)\s*(\d+)\b`).exec(u))) return { typ: "mail_lesen", nr: +m[2] };
+    if ((m = R(String.raw`\b(weck(e)? mich|wecker)\b.*?\b(?:um|auf|für)\s+(\d{1,2})(?:[:.]\s?(\d{2})|\s*uhr\s*(\d{1,2})?)?`).exec(u)))
+      return { typ: "wecker", zeit: m[3] + ":" + (m[4] || m[5] || "00") };
+    if ((m = R(String.raw`\bruf(e)?\s+(.+?)\s+an\b`, "i").exec(orig))) return { typ: "anrufen", wer: m[2] };
+    if ((m = R(String.raw`\b(navigier\w*|fahr mich|bring mich|route|navi)\b\s*(mich\s+)?(zu[mr]?|nach|zur|zu)\s+(.+)$`, "i").exec(orig))) return { typ: "navigation", ziel: m[4].replace(/[.!?]+$/, "") };
+    if (R(String.raw`\b(taschenlampe|blitzlicht)\b`).test(u)) return { typ: "taschenlampe", an: !R(String.raw`\b(aus|ausschalten|ausmachen)\b`).test(u) };
+    if ((m = R(String.raw`^(?:hey\s+)?(?:jarvis[,!. ]*)?(?:bitte\s+)?(?:öffne|oeffne|starte)\s+(?:mir\s+)?(?:die\s+)?(?:app\s+)?(.+?)(?:\s+app)?[.!?]*$`, "i").exec(orig)) && !R(String.raw`https?://|\.(de|com|org|net)\b`).test(u))
+      return { typ: "app", name: m[1] };
+    return null;
+  }
+  const JA_RE = R(String.raw`^\s*(ja|jo|jep|jawohl|yes|okay|ok|klar|genau|passt|richtig|senden|sende|schick|abschicken|raus damit|mach|mach das|ja bitte|bitte senden)\b`, "i");
+  const NEIN_RE = R(String.raw`^\s*(nein|nee|ne|nö|stopp|stop|abbrechen|abbruch|lass|lass es|nicht senden|vergiss|warte)\b`, "i");
+
   /* ------------------------------------------------------------ Befehle erkennen */
   const ZAHL = {
     ein: 1, eine: 1, einer: 1, einem: 1, zwei: 2, drei: 3, vier: 4, "fünf": 5, fuenf: 5, sechs: 6,
@@ -710,8 +866,16 @@
     else if (websuche === "tag") p.push("Du hast Internetzugang über Jarvis. Dein eigenes Wissen hat einen älteren Stand. Wenn eine Frage aktuelle Informationen braucht " +
       "(Nachrichten, Preise, Ergebnisse, Wetter woanders, Öffnungszeiten, neue Produkte, Personen in Ämtern, alles nach deinem Wissensstand) " +
       "und unten noch keine INTERNETSUCHE steht, antworte NUR mit genau einer Zeile: [suche: kurze Suchanfrage]. Sonst nie.");
-    else if (websuche === "done") p.push("Unten stehen frische Ergebnisse einer Internetsuche. Verlass dich darauf statt auf dein älteres Wissen. Keine weitere Suche.");
+    else if (websuche === "done") p.push("Unten stehen frische Daten (Internetsuche oder Ergebnis einer Aktion auf dem Handy). Verlass dich darauf statt auf dein älteres Wissen. Keine weitere Suche und keine weitere Aktion.");
     else p.push("Du hast keinen Internetzugang. Für aktuelle Ereignisse sag ehrlich, dass dein Wissen einen Stand hat.");
+    if (HAS_ACT && websuche !== "done") p.push("WERKZEUGE auf dem Handy des Nutzers. Wenn er etwas erledigt haben will, antworte NUR mit genau einer Zeile [aktion: JSON], ohne weiteren Text. Möglich:\n" +
+      '[aktion: {"typ":"mail_liste","ungelesen":true}] E-Mails abrufen\n' +
+      '[aktion: {"typ":"mail_lesen","nr":1}] E-Mail Nummer aus der letzten Liste lesen (oder "von":"Name")\n' +
+      '[aktion: {"typ":"mail_senden","an":"Name oder Adresse","betreff":"...","text":"fertiger Text"}]\n' +
+      '[aktion: {"typ":"mail_antworten","nr":1,"text":"fertiger Text"}] (ohne nr: auf die zuletzt gelesene)\n' +
+      '[aktion: {"typ":"sms","wer":"Name oder Nummer","text":"..."}] · [aktion: {"typ":"whatsapp","wer":"...","text":"..."}] · [aktion: {"typ":"anrufen","wer":"..."}]\n' +
+      '[aktion: {"typ":"navigation","ziel":"..."}] · [aktion: {"typ":"app","name":"..."}] · [aktion: {"typ":"wecker","zeit":"07:30"}] · [aktion: {"typ":"timer","minuten":10}] · [aktion: {"typ":"taschenlampe","an":true}]\n' +
+      "E-Mails und Nachrichten formulierst du vollständig, freundlich und passend im Namen des Nutzers" + (s.nutzer ? " (" + s.nutzer + ")" : "") + ". Jarvis fragt vor dem Senden selbst nach. Erfinde keine Adressen.");
     if (mitGedaechtnis) p.push("GEDÄCHTNIS (was du dir über deinen Nutzer gemerkt hast):\n" + (memText(kompakt ? 1500 : 4000) || "(noch leer)"));
     else p.push("GEDÄCHTNIS: Aus Datenschutzgründen bleibt das Gedächtnis auf dem Gerät des Nutzers und wird dir nicht geschickt. " +
       "Fragt er danach oder nach 'heute steht an', sag kurz, dass die Notizen nur bei der lokalen KI verfügbar sind.");
@@ -835,7 +999,7 @@
   }
 
   class TagFilter {
-    constructor() { this.buf = ""; this.think = false; this.merk = []; this.suche = ""; }
+    constructor() { this.buf = ""; this.think = false; this.merk = []; this.suche = ""; this.aktion = null; }
     feed(text, fin) {
       this.buf += text; const out = [];
       while (this.buf) {
@@ -854,6 +1018,13 @@
         const i = Math.min(...cand);
         out.push(this.buf.slice(0, i)); this.buf = this.buf.slice(i);
         if (this.buf.startsWith("<think>")) { this.buf = this.buf.slice(7); this.think = true; continue; }
+        if (/^\[\s*aktion\s*:/i.test(this.buf) || (!fin && "[aktion".startsWith(this.buf.slice(0, 7).toLowerCase()) && this.buf.length < 8)) {
+          const e = this.buf.indexOf("}]");
+          if (e < 0) { if (fin || this.buf.length > 8000) { out.push(fin && /^\[\s*aktion/i.test(this.buf) ? "" : this.buf); this.buf = ""; } break; }
+          const raw = this.buf.slice(this.buf.indexOf(":") + 1, e + 1).trim(); this.buf = this.buf.slice(e + 2);
+          try { this.aktion = JSON.parse(raw); } catch (x) { try { this.aktion = JSON.parse(raw.replace(/[„“”]/g, '"')); } catch (y) { } }
+          continue;
+        }
         const j = this.buf.indexOf("]");
         if (j < 0) { if (fin || this.buf.length > 300) { out.push(this.buf); this.buf = ""; } break; }
         const tag = this.buf.slice(0, j + 1); this.buf = this.buf.slice(j + 1);
@@ -872,6 +1043,31 @@
     let msgs = cleanHistory(raw);
     if (!msgs.length) return emit({ t: "error", message: "Leere Nachricht." });
     const text = msgs[msgs.length - 1].content, u = text.toLowerCase();
+    const sag = t => { emit({ t: "delta", text: t }); return emit({ t: "done", text: t }); };
+
+    // Offene Rückfrage ("Soll ich die E-Mail senden?") per Ja/Nein beantworten
+    const pending = LS.get("pending", null);
+    if (pending) {
+      LS.set("pending", null);
+      if (Date.now() - (pending.t || 0) < 5 * 60000) {
+        if (JA_RE.test(u)) { emit({ t: "action", typ: "status", text: "Wird ausgeführt …", leise: true }); return sag(await ausfuehren(pending, s)); }
+        if (NEIN_RE.test(u)) return sag("Alles klar, abgebrochen. Nichts wurde gesendet.");
+      }
+    }
+    async function rueckfrage(c) {
+      if (s.aktionen_bestaetigen === false) return await ausfuehren(c, s);
+      LS.set("pending", { name: c.name, args: c.args, t: Date.now() });
+      return c.text + " Soll ich das so senden?";
+    }
+    // Schnelle Handy-Befehle ohne KI
+    const sb = schnellbefehl(u, text);
+    let sbCtx = null;
+    if (sb) {
+      const r = await werkzeug(sb, s, emit);
+      if (r.confirm) return sag(await rueckfrage(r.confirm));
+      if (r.say && !r.fail) return sag(r.say);
+      if (r.ctx) sbCtx = r.ctx;
+    }
     let [anbieter, model] = await pickModel(s);
     if (model && anbieter !== "claude") {
       const lst = (await MODEL_FN[anbieter](s)).models || [];
@@ -900,6 +1096,7 @@
     const memOk = !cloud || !!s.gedaechtnis_cloud;
 
     const [actions, ctx, direct] = await route(u, s, text);
+    if (sbCtx) ctx.push(sbCtx);
     for (const a of actions) emit(Object.assign({ t: "action" }, a));
     if (direct) { emit({ t: "delta", text: direct }); return emit({ t: "done", text: direct }); }
     const memacts = actions.filter(a => a.typ === "gedaechtnis");
@@ -930,7 +1127,7 @@
     const darfSuchen = !claudeSucht && sucheErlaubt(s) && !privatErkannt;
     // Ausdrücklich gewünschte Suche ("such mal ...", "was gibt's Neues ...") sofort ausführen
     const schonErledigt = actions.some(a => ["wetter", "briefing", "system", "webseite", "timer", "oberflaeche"].includes(a.typ));
-    let gesucht = false;
+    let gesucht = !!sbCtx;
     if (darfSuchen && !schonErledigt && SUCHE_RE.test(u)) {
       const wunsch = /duckduckgo|duck duck/.test(u) ? "duckduckgo" : /google|googel|googl/.test(u) ? "google" : "";
       const r = await webSuche(suchText(text), s, emit, wunsch);
@@ -961,6 +1158,15 @@
     }
     try {
       await generate(claudeSucht ? "claude" : gesucht ? "done" : darfSuchen ? "tag" : "");
+      // Die KI möchte etwas auf dem Handy erledigen (E-Mail, SMS, Anruf …)
+      if (tf.aktion && HAS_ACT && !sbCtx) {
+        const a = tf.aktion; tf.aktion = null;
+        const r = await werkzeug(a, s, emit);
+        const add = t => { if (full.join("").trim()) { full.push(" "); emit({ t: "delta", text: " " }); } full.push(t); emit({ t: "delta", text: t }); };
+        if (r.ctx) { ctx.push(r.ctx); if (full.join("").trim()) add(""); await generate("done"); }
+        else if (r.confirm) add(await rueckfrage(r.confirm));
+        else if (r.say) add(r.say);
+      }
       // Die KI hat selbst nach einer Suche gefragt: suchen und mit den Ergebnissen noch einmal antworten
       if (tf.suche && darfSuchen && !gesucht && full.join("").trim().length < 400) {
         const q = tf.suche; tf.suche = "";
@@ -1010,6 +1216,12 @@
       return json(404, { error: "Nicht gefunden: " + path });
     }
     if (path === "/api/settings") { const s = updateSettings(data); CACHE.clear(); return json(200, publicSettings(s)); }
+    if (path === "/api/mailtest") {
+      const s = loadSettings(), c = mailCreds(s);
+      if (!c) return json(200, { ok: false, fehler: "Bitte E-Mail-Adresse und App-Passwort eintragen und speichern." });
+      const r = await nativeAct("mail_liste", Object.assign({ anzahl: 1, ungelesen: true }, c));
+      return json(200, r);
+    }
     if (path === "/api/test") {
       const fn = MODEL_FN[data.anbieter]; if (!fn) return json(400, { ok: false, fehler: "Unbekannter Anbieter" });
       CACHE.clear(); return json(200, await fn(loadSettings()));

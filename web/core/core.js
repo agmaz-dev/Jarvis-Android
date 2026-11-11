@@ -219,7 +219,11 @@
     const ev = (kind, text) => J.emit("event", { kind, text });
     J.S.pulse = 1;
     switch (a.typ) {
-      case "timer": addTimer(a.sek, a.text); J.emit("module", "automation"); ev("timer", "Timer " + fmtDur(a.sek) + " · " + a.text); break;
+      case "timer":
+        // In der App: echter Timer in der Uhr-App (klingelt auch, wenn Jarvis geschlossen ist)
+        if (window.JarvisNative && window.JarvisNative.act) { try { window.JarvisNative.act("t" + Date.now(), "timer", JSON.stringify({ sek: a.sek, text: a.text })); } catch (e) { addTimer(a.sek, a.text); } }
+        else addTimer(a.sek, a.text);
+        J.emit("module", "automation"); ev("timer", "Timer " + fmtDur(a.sek) + " · " + a.text); break;
       case "webseite": {
         J.emit("module", "automation"); ev("web", "Öffne " + a.name);
         let w = null; try { w = window.open(a.url, "_blank", "noopener"); } catch (e) { }
@@ -245,7 +249,7 @@
         break;
       }
       case "routine": ev("routine", "Routine: " + a.satz); break;
-      case "status": ev("ki", a.text); toast(a.text, false, 6000); break;
+      case "status": ev("ki", a.text); if (!a.leise) toast(a.text, false, 6000); break;
     }
   }
 
@@ -576,6 +580,7 @@
     L.push(["Spracheingabe", st.strikt_lokal ? "aus (bitte tippen)" : "läuft über einen Online-Dienst des Browsers (Chrome: Google, Edge: Microsoft)" + (st.mikro === "aus" ? ", aber nur, wenn du den Mikro-Knopf drückst" : ""), !st.strikt_lokal]);
     const st2 = st.strikt_lokal ? "nur Stimmen, die auf deinem PC installiert sind" : st.stimme === "elevenlabs" ? "der gesprochene Text geht an ElevenLabs" : st.stimme === "aus" ? "aus" : "Browser-Stimme. Achtung: Stimmen mit „Online“ oder „Natural“ im Namen laufen über Server von Microsoft bzw. Google";
     L.push(["Sprachausgabe", st2, !st.strikt_lokal && st.stimme !== "aus"]);
+    if (st.mail_adresse) L.push(["E-Mail", "Jarvis liest deine E-Mails direkt beim Anbieter. Liest oder schreibt die KI eine Mail, geht der Inhalt an die gewählte KI" + (cloud ? " (" + prov + ")" : " (bleibt auf dem Handy)"), cloud]);
     L.push(["Wetter", st.strikt_lokal ? "aus" : "nur der Ortsname geht an Open-Meteo", !st.strikt_lokal]);
     if (cloud && st.anbieter === "claude" && st.websuche) L.push(["Websuche", "Claude sucht bei Bedarf im Web", true]);
     else if (st.internetsuche && !st.strikt_lokal) L.push(["Internetsuche", "nur die Suchanfrage geht an " + (st.suchmaschine === "duckduckgo" ? "DuckDuckGo" : "Google") + "; bei erkannten privaten Daten wird nicht gesucht", true]);
@@ -703,7 +708,14 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
 <div class="jv-list" id="jv-memlist"></div>
 <div style="margin-top:12px"><button class="jv-btn jv-danger" id="jv-memclear">Alles löschen</button></div>
 </section>
-<section class="tab" data-tab="auto"><h3>Automation</h3><p class="hint">Routinen: Wenn ein Satz fällt, passiert etwas. Funktioniert mit jeder KI, auch mit kleinen lokalen Modellen.</p>
+<section class="tab" data-tab="auto"><h3>Automation</h3>
+${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail</h4><p class="hint" style="margin:0 0 10px">Jarvis liest, fasst zusammen, beantwortet und schreibt E-Mails. Du brauchst ein <b>App-Passwort</b> deines Anbieters (Gmail: myaccount.google.com/apppasswords · Yahoo: Kontosicherheit → App-Passwort). Das normale Passwort funktioniert nicht.</p>
+<div class="row"><label>E-Mail-Adresse</label><input type="email" data-k="mail_adresse" placeholder="name@gmail.com" autocomplete="off"></div>
+<div class="row"><label>App-Passwort<small>16 Zeichen, Leerzeichen egal</small></label><input type="password" data-k="mail_passwort" autocomplete="off"></div>
+<div class="row"><label>Vor dem Senden fragen<small>„Soll ich das so senden?“ – mit „Ja“ antworten</small></label>${sw("aktionen_bestaetigen", "E-Mails und SMS erst nach meinem Ja senden")}</div>
+<div class="row"><label></label><div class="inl"><span class="res" id="jv-mailres"></span><button class="jv-btn" id="jv-mailtest">Verbindung testen</button></div></div></div>
+<div class="box"><h4>Handy-Befehle</h4><p class="hint" style="margin:0">Zum Beispiel: „Lies meine E-Mails“, „Lies Nummer 2“, „Antworte, dass ich morgen komme“, „Schreib Ahmet per SMS, dass ich später komme“, „Ruf Mama an“, „Weck mich um 6:30“, „Navigiere zum Flughafen BER“, „Öffne Spotify“, „Taschenlampe an“. Beim ersten Mal fragt Android nach den Berechtigungen (Kontakte, Telefon, SMS).</p></div>` : ""}
+<p class="hint">Routinen: Wenn ein Satz fällt, passiert etwas. Funktioniert mit jeder KI, auch mit kleinen lokalen Modellen.</p>
 <div class="box"><h4>Routinen</h4><div class="jv-rt" style="font-size:11px;color:var(--mut)"><span>WENN ICH SAGE …</span><span>DANN</span><span>WERT</span><span></span></div><div id="jv-routines"></div>
 <button class="jv-btn" id="jv-rtadd">+ Routine</button></div>
 <div class="box"><h4>Weck-Briefing & Wetter</h4>
@@ -863,6 +875,11 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
     const upd = () => { const pl = $("jv-privlist"); if (pl) pl.innerHTML = privList(Object.assign({}, J.settings, readValues(box))); };
     box.addEventListener("change", upd); upd();
     { const g = $("jv-gsetup"); if (g) g.onclick = () => { try { window.JarvisNative.googleSetup(); } catch (e) { } }; }
+    { const mt = $("jv-mailtest"); if (mt) mt.onclick = async () => {
+      const r = $("jv-mailres"); r.className = "res"; r.textContent = "prüfe …";
+      try { J.settings = await api("/api/settings", readValues(box)); bindValues(box); const x = await api("/api/mailtest", {});
+        r.className = "res " + (x.ok ? "ok" : "bad"); r.textContent = x.ok ? "✓ verbunden · " + x.ungelesen + " ungelesen" : "✗ " + (x.fehler || x.msg); }
+      catch (e) { r.className = "res bad"; r.textContent = "✗ " + e.message; } }; }
     if (HAS_LLM) setTimeout(renderLlm, 80);   // erst wenn das Fenster offen ist
     /* Anbieter antippen: passenden Kasten zeigen (darunter) und hervorheben */
     box.querySelectorAll('input[name="anb"]').forEach(r => r.addEventListener("change", () => {
