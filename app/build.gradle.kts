@@ -10,8 +10,10 @@ android {
         applicationId = "de.agmaz.jarvis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.2.0"
+        // Jede Test-APK bekommt die Build-Nummer von GitHub, damit man sieht, welche Version installiert ist
+        val build = (System.getenv("GITHUB_RUN_NUMBER") ?: "2").toInt()
+        versionCode = build
+        versionName = "1.2.$build"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }

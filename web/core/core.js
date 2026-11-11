@@ -832,7 +832,7 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
       }
       else right = `${m.failed ? '<span class="res bad">Download fehlgeschlagen</span>' : ""}<button class="jv-btn" data-llmdl="${m.id}">Herunterladen (${String(m.gb).replace(".", ",")} GB)</button>`;
       return `<div class="row"><label>${esc(m.name)}<small>${esc(m.info)}</small></label><div class="inl">${right}</div></div>`;
-    }).join("") + `<p class="hint" style="margin:6px 0 0">Freier Speicher: ${String(Math.round(st.free_gb || 0))} GB</p>`;
+    }).join("") + `<p class="hint" style="margin:6px 0 0">Freier Speicher: ${String(Math.round(st.free_gb || 0))} GB · App-Version ${esc((window.JarvisNative.appVersion && window.JarvisNative.appVersion()) || "?")}</p>`;
     box.querySelectorAll("[data-llmdl]").forEach(b => b.onclick = () => { b.disabled = true; b.textContent = "startet …"; window.JarvisNative.llmDownload(b.dataset.llmdl); setTimeout(renderLlm, 1500); });
     box.querySelectorAll("[data-llmdel]").forEach(b => b.onclick = () => {
       if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "Wirklich?"; return; }

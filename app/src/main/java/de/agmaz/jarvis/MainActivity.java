@@ -153,6 +153,14 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
         }
 
+        // Nach einem Update alte Dateien aus dem Zwischenspeicher der Oberfläche verwerfen
+        try {
+            int vc = (int) getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
+            android.content.SharedPreferences pr = getSharedPreferences("app", MODE_PRIVATE);
+            if (pr.getInt("vc", -1) != vc) { web.clearCache(true); pr.edit().putInt("vc", vc).apply(); }
+        } catch (Exception ignored) { }
+        web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START);
     }
@@ -558,6 +566,11 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void openUrl(final String url) { main.post(() -> openExternal(url)); }
+
+        @JavascriptInterface
+        public String appVersion() {
+            try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) { return "?"; }
+        }
 
         @JavascriptInterface
         public void googleSearch(final String id, final String q) { main.post(() -> MainActivity.this.googleSearch(id, q)); }
