@@ -244,7 +244,7 @@
       return { ok: false, models: [], fehler: `Claude nicht erreichbar (${e.name || "Fehler"}).` };
     }
   }
-  const NON_CHAT = /embed|tts|whisper|dall-e|moderation|audio|realtime|transcribe|image|davinci|babbage|search|computer-use|sora/i;
+  const NON_CHAT = /embed|tts|whisper|dall-e|moderation|audio|realtime|transcribe|image|davinci|babbage|search|computer-use|sora|orpheus|guard/i;
   async function openaiModels(s) {
     const base = s.openai_url || "", key = s.openai_key || "";
     if (!base) return { ok: false, models: [], fehler: "Keine Basis-Adresse eingetragen." };
@@ -253,7 +253,7 @@
       const ids = await cached("openai:" + base + key.slice(-6), 600, async () => {
         const j = await getJson(base + "/models", key ? { Authorization: "Bearer " + key } : {}, 8);
         let ids = (j.data || []).map(m => m.id).filter(Boolean);
-        if (base.includes("api.openai.com")) ids = ids.filter(i => !NON_CHAT.test(i));
+        ids = ids.filter(i => !NON_CHAT.test(i));   // nur Chat-Modelle anzeigen (auch bei Groq)
         return ids.sort();
       });
       return { ok: !!ids.length, models: ids, fehler: ids.length ? "" : "Keine Modelle gefunden." };
