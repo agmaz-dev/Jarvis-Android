@@ -214,7 +214,7 @@ public class Mail {
         String m = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
         String l = m.toLowerCase(Locale.ROOT);
         if (l.contains("authenticat") || l.contains("invalid credentials") || l.contains("login") || l.contains("535"))
-            return "Anmeldung abgelehnt. Bitte E-Mail-Adresse und App-Passwort in den Einstellungen prüfen.";
+            return "Anmeldung abgelehnt (Server: „" + (m.length() > 160 ? m.substring(0, 160) : m).trim() + "“). Es funktioniert nur ein App-Passwort, nicht das normale Passwort.";
         if (l.contains("unknownhost") || l.contains("unable to resolve") || l.contains("timeout") || l.contains("connect"))
             return "Mail-Server nicht erreichbar. Besteht eine Internetverbindung?";
         return m.length() > 200 ? m.substring(0, 200) : m;
