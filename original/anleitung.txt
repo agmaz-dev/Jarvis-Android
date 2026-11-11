@@ -1,0 +1,539 @@
+=====================================================================
+  JARVIS · YouTube-Edition 1.1 · ANLEITUNG
+=====================================================================
+
+INHALT
+   1. Was ist das?
+   2. Schnellstart in 5 Minuten
+   3. Variante A: Lokal mit Ollama (kostenlos, ohne Schlüssel)
+   4. Variante B: Claude mit API-Schlüssel
+   5. Variante C: OpenAI oder kompatible Dienste (Groq, OpenRouter, LM Studio)
+   6. WO KOMMT DER API-SCHLÜSSEL HIN?
+   7. Zwischen lokal und API wechseln
+   8. Stimme
+   9. Mikrofon
+  10. Gedächtnis
+  11. Befehle und Automation
+  12. Die 7 Oberflächen
+  13. Ordner und Dateien
+  14. FEHLERBEHEBUNG (auch: Wechsel von Teil 1 zu Teil 2)
+  15. DATENSCHUTZ: WAS VERLÄSST MEINEN PC?
+  16. Sicherheit
+  17. Für Bastler: eigene Oberfläche bauen
+
+
+---------------------------------------------------------------------
+1. WAS IST DAS?
+---------------------------------------------------------------------
+Jarvis ist ein persönlicher KI-Assistent im Browser. Er spricht, hört
+zu, merkt sich Dinge über dich und kann Timer stellen, Webseiten öffnen,
+das Wetter und deine Systemwerte zeigen.
+
+Das Besondere an dieser Version: EIN Programm für ALLE Varianten.
+  - Lokal mit Ollama   (kostenlos, läuft auf deinem PC, kein Internet nötig)
+  - Claude per API     (Anthropic, sehr gute Antworten, mit Websuche)
+  - OpenAI-kompatibel  (OpenAI, Groq, OpenRouter, LM Studio ...)
+
+Du musst KEINEN Code ändern, um zwischen den Varianten zu wechseln.
+Alles geht über die Einstellungen (oben links) und die Modellauswahl
+(oben rechts).
+
+Was du brauchst:
+  - Windows 10/11 (Mac und Linux gehen auch)
+  - Python 3.8 oder neuer  (https://www.python.org)
+  - Google Chrome oder Microsoft Edge (für die Spracheingabe)
+  - Für die lokale Variante: Ollama (https://ollama.com)
+Sonst nichts. Es muss nichts mit "pip install" installiert werden.
+
+
+---------------------------------------------------------------------
+2. SCHNELLSTART IN 5 MINUTEN
+---------------------------------------------------------------------
+  1. Ordner "Jarvis" entpacken, z.B. nach C:\Jarvis
+     (nicht im ZIP lassen, sonst klappt es nicht)
+  2. Doppelklick auf  start.bat
+     Es öffnet sich ein schwarzes Fenster. Das ist der Jarvis-Server.
+     Dieses Fenster OFFEN LASSEN, solange du Jarvis benutzt.
+  3. Der Browser öffnet sich automatisch mit  http://localhost:5050
+     (Falls nicht: die Adresse von Hand in Chrome oder Edge eingeben.)
+  4. Auf "AKTIVIEREN" klicken.
+  5. Oben rechts siehst du, welche KI gefunden wurde.
+     Grüner Punkt = bereit. Roter Punkt = noch keine KI eingerichtet.
+     -> Dann Variante A, B oder C einrichten (unten).
+
+WICHTIG: Die HTML-Dateien NICHT per Doppelklick öffnen!
+Immer zuerst start.bat starten und dann http://localhost:5050 aufrufen.
+Wer die Datei direkt öffnet (Adresse beginnt mit file:///), hat kein
+Mikrofon, keine KI und keine Einstellungen.
+
+Beenden: Im schwarzen Fenster Strg + C drücken oder das Fenster schließen.
+
+
+---------------------------------------------------------------------
+3. VARIANTE A: LOKAL MIT OLLAMA (kostenlos, ohne Schlüssel)
+---------------------------------------------------------------------
+  1. Ollama installieren: https://ollama.com -> Download für Windows
+  2. Ein Sprachmodell laden. Eingabeaufforderung (cmd) öffnen und tippen:
+
+        ollama pull llama3.2
+
+     llama3.2 ist klein (rund 2 GB) und läuft auch auf schwächeren PCs.
+     Größere Modelle antworten klüger und auf Deutsch besser, brauchen
+     aber mehr Grafikspeicher, z.B.:
+        ollama pull qwen3:8b
+        ollama pull gemma3:12b
+     Welche Modelle installiert sind:  ollama list
+
+  3. Prüfen, ob Ollama läuft: im Browser  http://localhost:11434  öffnen.
+     Dort muss stehen: "Ollama is running".
+     Wenn nicht: Ollama aus dem Startmenü starten (Lama-Symbol unten
+     rechts in der Taskleiste) oder in cmd tippen:  ollama serve
+  4. In Jarvis oben rechts auf die Modellauswahl klicken und
+     "↻ Modelle neu suchen" wählen. Dein Modell erscheint unter
+     "Lokal · Ollama". Anklicken. Fertig.
+
+Ollama auf einem anderen PC oder unter WSL? Siehe Abschnitt 14.
+
+Tipp: Die erste Antwort nach dem Start dauert oft länger, weil Ollama
+das Modell erst in den Speicher lädt. Danach geht es schneller.
+
+
+---------------------------------------------------------------------
+4. VARIANTE B: CLAUDE MIT API-SCHLÜSSEL
+---------------------------------------------------------------------
+  1. Auf https://console.anthropic.com anmelden.
+  2. Unter "Billing" Guthaben aufladen.
+     ACHTUNG: Ein Claude-Abo (z.B. Pro) ist KEIN API-Guthaben.
+     Die API wird getrennt über die Console abgerechnet.
+  3. Unter "API Keys" einen neuen Schlüssel erstellen und kopieren.
+     Er beginnt mit  sk-ant-
+  4. Schlüssel in Jarvis eintragen (siehe Abschnitt 6).
+  5. Oben rechts ein Claude-Modell auswählen.
+
+Websuche: Claude kann im Web nachsehen (Einstellungen -> KI & Modelle ->
+"Websuche"). Das kostet pro Suche etwas extra. Bei Ollama und OpenAI-
+kompatiblen Diensten gibt es in dieser Version keine Websuche.
+
+
+---------------------------------------------------------------------
+5. VARIANTE C: OPENAI ODER KOMPATIBLE DIENSTE
+---------------------------------------------------------------------
+Viele Anbieter sprechen dieselbe "Sprache" wie OpenAI. Du brauchst nur
+die Basis-Adresse und einen Schlüssel:
+
+  Anbieter      Basis-Adresse                       Schlüssel
+  ----------    ---------------------------------   -----------------
+  OpenAI        https://api.openai.com/v1           sk-...
+  Groq          https://api.groq.com/openai/v1      gsk_...
+  OpenRouter    https://openrouter.ai/api/v1        sk-or-...
+  LM Studio     http://localhost:1234/v1            leer lassen
+
+Bei LM Studio vorher in LM Studio den lokalen Server starten.
+Die Adressen stammen aus den Dokumentationen der Anbieter und können
+sich ändern. Im Zweifel dort nachsehen.
+
+
+---------------------------------------------------------------------
+6. WO KOMMT DER API-SCHLÜSSEL HIN?
+---------------------------------------------------------------------
+WEG 1 (empfohlen): In Jarvis selbst
+  1. Oben links auf  "Einstellungen"
+  2. Reiter "KI & Modelle"
+  3. Den Schlüssel in das passende Feld einfügen:
+        Claude              -> Feld "API-Schlüssel" im Kasten "Claude"
+        OpenAI-kompatibel   -> "Basis-Adresse" + "API-Schlüssel"
+        ElevenLabs (Stimme) -> Reiter "Stimme", Kasten "ElevenLabs"
+  4. "Verbindung testen" klicken. Bei Erfolg steht dort:
+        ✓ verbunden · X Modelle
+  5. "Speichern" klicken.
+
+WEG 2: Von Hand in der Datei  einstellungen.json
+  Die Datei entsteht beim ersten Start neben server.py. Mit dem Editor
+  öffnen und den Schlüssel zwischen die Anführungszeichen setzen:
+
+        "claude_key": "sk-ant-DEIN-SCHLUESSEL",
+        "openai_key": "sk-DEIN-SCHLUESSEL",
+        "openai_url": "https://api.openai.com/v1",
+        "eleven_key": "DEIN-ELEVENLABS-SCHLUESSEL",
+        "eleven_voice": "DEINE-STIMMEN-ID",
+
+  Wichtig: Anführungszeichen und Kommas stehen lassen. Ist die Datei
+  kaputt, nimmt Jarvis die Standardwerte. Dann die Datei löschen,
+  Jarvis neu starten, sie wird neu angelegt.
+  Ein Neustart nach dem Ändern ist nicht nötig, Jarvis liest die Datei
+  bei jeder Anfrage neu.
+
+In den Einstellungen siehst du nach dem Speichern nur noch "••••" und
+die letzten 4 Zeichen. Der Schlüssel bleibt auf deinem PC und wird
+nur an den jeweiligen Anbieter geschickt.
+
+
+---------------------------------------------------------------------
+7. ZWISCHEN LOKAL UND API WECHSELN
+---------------------------------------------------------------------
+Oben rechts auf die Modellauswahl klicken. Dort stehen alle Modelle,
+gruppiert nach:
+     Lokal · Ollama
+     Claude · API
+     OpenAI-kompatibel · API
+Ein Klick genügt. Jarvis merkt sich die Auswahl.
+Steht in einer Gruppe "– nicht verfügbar", zeigt der Text daneben den
+Grund (Ollama läuft nicht, kein Schlüssel, Schlüssel ungültig ...).
+
+Du kannst also z.B. Ollama für den Alltag nutzen und für schwierige
+Fragen kurz auf Claude umschalten. Der Gesprächsverlauf bleibt erhalten.
+
+
+---------------------------------------------------------------------
+8. STIMME
+---------------------------------------------------------------------
+Einstellungen -> Stimme:
+  Browser-Stimme  kostenlos. Welche Stimmen es gibt, hängt von Windows
+                  und Browser ab. In Microsoft Edge gibt es sehr
+                  natürliche Stimmen (Name enthält "Natural").
+                  Fehlt eine deutsche Stimme: Windows-Einstellungen ->
+                  Zeit und Sprache -> Sprache -> Deutsch -> Sprachausgabe.
+  ElevenLabs      klingt am besten, auch mit deiner eigenen geklonten
+                  Stimme. Braucht Schlüssel und Stimmen-ID von
+                  https://elevenlabs.io  und verbraucht dort Guthaben.
+                  Fällt ElevenLabs aus, spricht Jarvis mit der
+                  Browser-Stimme weiter.
+  Stumm           nur Text.
+
+"Stimme testen" spielt einen Probesatz ab.
+Die Animation bewegt sich mit der Stimme. Bei ElevenLabs folgt sie der
+echten Lautstärke. Bei der Browser-Stimme lässt der Browser das nicht
+zu, dort wird die Bewegung aus dem Sprechrhythmus nachgebildet.
+
+
+---------------------------------------------------------------------
+9. MIKROFON
+---------------------------------------------------------------------
+Einstellungen -> Mikrofon. Drei Modi:
+  An, wenn fertig gesprochen  (empfohlen) Jarvis hört zu, macht während
+                              seiner Antwort Pause und hört danach
+                              wieder zu. So hört er sich nicht selbst.
+  Immer an                    Du kannst ihm ins Wort fallen ("Stopp").
+                              Mit Lautsprechern kann er sich selbst
+                              hören, daher Headset empfohlen.
+  Nur auf Knopfdruck          Mikro-Knopf oder Leertaste drücken, Satz
+                              sagen, fertig.
+
+Aktivierungswort: Wenn eingeschaltet, reagiert Jarvis nur, wenn das Wort
+(Standard "Jarvis") im Satz vorkommt. Sagst du nur "Jarvis", antwortet
+er "Ja?" und hört 8 Sekunden ohne Aktivierungswort zu.
+
+Wichtig zur Spracherkennung:
+  - Sie funktioniert nur in Chrome und Edge (nicht in Firefox).
+  - Sie läuft über einen Online-Dienst des Browsers, braucht also
+    Internet. Das gilt auch, wenn die KI selbst lokal über Ollama läuft.
+    Schreiben geht immer, auch komplett offline.
+  - Beim ersten Mal fragt der Browser nach dem Mikrofon -> "Zulassen".
+
+Tasten:  Leertaste = Mikrofon an/aus (wenn kein Textfeld aktiv ist)
+         Esc       = Jarvis sofort stoppen
+         Enter     = Nachricht senden
+
+
+---------------------------------------------------------------------
+10. GEDÄCHTNIS
+---------------------------------------------------------------------
+Jarvis merkt sich Dinge über dich in der Datei  gedaechtnis.json.
+  - "Merk dir, dass ich am Freitag Zahnarzt habe"  -> wird gespeichert
+  - "Vergiss Zahnarzt"                             -> wird gelöscht
+  - "Was weißt du über mich?"                      -> Zusammenfassung
+  - Selbst dazulernen (Einstellungen -> Gedächtnis): Jarvis erkennt
+    selbst, wenn du etwas Wichtiges über dich erzählst, und merkt es
+    sich. Das klappt mit großen Modellen (Claude, GPT) zuverlässig,
+    kleine lokale Modelle übersehen es öfter. "Merk dir ..." klappt
+    immer, egal welches Modell.
+  - In den Einstellungen siehst du alle Einträge, kannst neue anlegen
+    und einzelne oder alle löschen.
+  - Bei einer Cloud-KI bleibt das Gedächtnis standardmäßig auf deinem PC
+    und wird NICHT mitgeschickt. Ändern: Einstellungen -> Datenschutz
+    (siehe Abschnitt 15).
+
+
+---------------------------------------------------------------------
+11. BEFEHLE UND AUTOMATION
+---------------------------------------------------------------------
+Diese Befehle erkennt Jarvis selbst, sie funktionieren mit JEDEM Modell:
+
+  "Bist du da?" / "Was geht ab?" /    Weck-Briefing: Systemwerte, Wetter,
+  "Guten Morgen" / "Wach auf"         was heute ansteht (aus dem Gedächtnis)
+  "Erinnere mich in 10 Minuten an     Timer mit Erinnerung (oben rechts)
+   die Pizza"
+  "Stell einen Timer auf 5 Minuten"   Timer
+  "Merk dir ..." / "Vergiss ..."      Gedächtnis
+  "Öffne YouTube" / "Öffne heise.de"  Webseite öffnen
+  "Wie ist das Wetter?"               Wetter mit Anzeige
+  "Wie läuft mein System?"            CPU, Arbeitsspeicher, Festplatte
+  "Wechsel die Oberfläche auf Aura"   anderes Design
+  "Stopp"                             sofort still
+
+Wetter-Ort: Einstellungen -> Automation -> "Ort fürs Wetter".
+Wetterdaten: Open-Meteo (kostenlos, kein Schlüssel).
+
+ROUTINEN (Einstellungen -> Automation):
+Eigene Befehle ohne Programmieren. "Wenn ich sage ..." -> "Dann ...":
+  Weck-Briefing       z.B. "guten morgen"
+  Webseite öffnen     z.B. "mein kanal"  ->  https://youtube.com/@...
+  Text sagen          z.B. "feierabend"  ->  "Schönen Feierabend!"
+  Oberfläche wechseln Wert: vortex, nova, sphaeren, aura, gitter,
+                      begleiter, band
+  Timer (Minuten)     z.B. "pause machen" -> 15
+Briefing beim Start: Einstellungen -> Automation.
+
+Blockiert der Browser das Öffnen von Webseiten, steht im Chat ein Link.
+Dauerhaft erlauben: in der Adresszeile auf das Pop-up-Symbol klicken
+-> "Pop-ups von localhost immer zulassen".
+
+
+---------------------------------------------------------------------
+12. DIE 7 OBERFLÄCHEN
+---------------------------------------------------------------------
+Alle Oberflächen haben dieselben Funktionen (Chat, Einstellungen,
+Modellauswahl). Nur das Aussehen und die Animation sind anders.
+
+  Vortex     jarvis.html                  HAUPTOBERFLÄCHE: HUD mit
+                                          Energie-Wirbel, 6 Modulen,
+                                          Live-Werten und Aktivitätsliste
+  Nova       oberflaechen/nova.html       glühender Funken-Kern, große
+                                          Schrift "Ich bin Jarvis."
+  Sphären    oberflaechen/sphaeren.html   Glas-Sphären mit Neuronennetz
+  Aura       oberflaechen/aura.html       Glaskugel mit Neon-Schleifen
+  Gitter     oberflaechen/gitter.html     grünes Drahtgitter mit Stern
+  Begleiter  oberflaechen/begleiter.html  freundliche Kugel mit Augen,
+                                          die dem Mauszeiger folgen
+  Band       oberflaechen/band.html       Lichtband-Ring um einen Kern
+
+Wechseln: Einstellungen -> Oberfläche, per Sprache ("Wechsel die
+Oberfläche auf Nova") oder direkt die Adresse aufrufen, z.B.
+  http://localhost:5050/oberflaechen/nova.html
+http://localhost:5050 öffnet immer die zuletzt gewählte Oberfläche.
+
+Jede Oberfläche reagiert auf vier Zustände:
+  Bereit · Hört zu · Denkt nach · Spricht
+
+
+---------------------------------------------------------------------
+13. ORDNER UND DATEIEN
+---------------------------------------------------------------------
+  Jarvis/
+    start.bat             Start unter Windows (Doppelklick)
+    start.sh              Start unter Mac/Linux
+    server.py             der Server: verbindet Oberfläche und KI
+    jarvis.html           Hauptoberfläche (Vortex)
+    oberflaechen/         die 6 weiteren Oberflächen
+    core/core.js          gemeinsame Technik aller Oberflächen
+    core/core.css         gemeinsames Aussehen von Chat und Einstellungen
+    anleitung.txt         diese Datei
+    einstellungen.json    entsteht beim ersten Start (deine Einstellungen
+                          und Schlüssel)
+    gedaechtnis.json      entsteht beim ersten "Merk dir" (Gedächtnis)
+
+Für Programmierer, wo was im Code steht (server.py):
+  stream_ollama()   Anbindung Ollama  (POST /api/chat)
+  stream_claude()   Anbindung Claude  (POST /v1/messages)
+  stream_openai()   Anbindung OpenAI-kompatibel (POST /chat/completions)
+  route()           erkennt Befehle (Timer, Webseite, Briefing ...)
+  privat_erkennen() erkennt private Daten für die Privat-Weiche
+  run_chat()        entscheidet, ob eine Nachricht lokal oder in die
+                    Cloud geht
+  system_prompt()   die Persönlichkeit von Jarvis
+  DEFAULTS          alle Einstellungen mit Standardwerten
+Anderer Port: Umgebungsvariable JARVIS_PORT setzen (Standard 5050).
+Ist 5050 belegt, nimmt Jarvis automatisch 5051 bis 5059 und zeigt die
+Adresse im schwarzen Fenster an.
+
+
+---------------------------------------------------------------------
+14. FEHLERBEHEBUNG
+---------------------------------------------------------------------
+>> VON TEIL 1 (Ollama) ZU TEIL 2 (API) GEWECHSELT, JETZT GEHT NICHTS?
+   Diese Version kann beides. Prüfe der Reihe nach:
+   a) Wurde start.bat gestartet und ist das schwarze Fenster offen?
+   b) Steht in der Adresszeile  http://localhost:5050  (nicht file:///)?
+   c) Oben rechts: welche Gruppe ist ausgewählt? Für die API muss ein
+      Modell unter "Claude · API" oder "OpenAI-kompatibel" gewählt sein.
+   d) Einstellungen -> KI & Modelle -> "Verbindung testen". Der Text
+      daneben sagt genau, was fehlt.
+   e) Läuft noch ein alter Jarvis aus Teil 1 oder 2? Dann ist der Port
+      evtl. belegt. Alle schwarzen Fenster schließen und neu starten.
+
+>> "Ollama nicht erreichbar"
+   - Ollama starten (Startmenü) oder in cmd:  ollama serve
+   - Test im Browser:  http://localhost:11434  -> "Ollama is running"
+   - Andere Adresse? In den Einstellungen unter "Ollama -> Adresse".
+
+>> OLLAMA LÄUFT UNTER WSL (Linux in Windows)
+   Normalerweise erreicht Windows ein Ollama in WSL über localhost.
+   Klappt es nicht:
+   - In WSL starten mit:  OLLAMA_HOST=0.0.0.0 ollama serve
+   - In WSL die Adresse anzeigen:  hostname -I
+   - In Jarvis als Ollama-Adresse eintragen:  http://DIESE-ADRESSE:11434
+   Einfacher: Ollama direkt unter Windows installieren.
+   Achtung: Laufen Ollama unter Windows UND in WSL gleichzeitig, kämpfen
+   beide um Port 11434. Eins davon beenden.
+
+>> "Modell ... ist nicht installiert"
+   In cmd:  ollama pull MODELLNAME   (genau so, wie es in der Meldung steht)
+
+>> "Python wurde nicht gefunden"
+   Python von https://www.python.org installieren. Beim Installieren
+   unbedingt den Haken bei "Add python.exe to PATH" setzen.
+   Danach start.bat erneut starten.
+
+>> Claude: "Schlüssel ungültig" / "Kein Guthaben"
+   - Schlüssel komplett kopiert? Beginnt mit sk-ant- ?
+   - Guthaben in https://console.anthropic.com aufgeladen?
+     Ein Claude-Pro-Abo zählt nicht als API-Guthaben.
+
+>> Kleine lokale Modelle antworten komisch oder auf Englisch
+   Größeres Modell nehmen (siehe Abschnitt 3) oder in den Einstellungen
+   unter "Persönlichkeit" ergänzen: "Antworte immer auf Deutsch."
+
+>> Keine Stimme
+   - Einmal auf die Seite klicken (Browser erlauben Ton erst nach einem
+     Klick).
+   - Einstellungen -> Stimme -> "Stimme testen".
+   - Windows-Lautstärke und Browser-Tab nicht stumm?
+
+>> Mikrofon geht nicht / Knopf ist ausgegraut
+   - Chrome oder Edge nutzen.
+   - Adresse muss http://localhost:5050 sein.
+   - Links in der Adresszeile auf das Schloss/Symbol klicken ->
+     Mikrofon "Zulassen". Danach Seite neu laden.
+   - Hinweis "Spracherkennung braucht Internet": Verbindung prüfen.
+   - Belegt ein anderes Programm (z.B. OBS) das Mikrofon exklusiv?
+
+>> Jarvis hört sich selbst und antwortet sich
+   Mikrofon-Modus "An, wenn fertig gesprochen" oder Headset nutzen.
+
+>> Die Animation ruckelt
+   Andere Oberfläche probieren (Begleiter und Gitter sind am leichtesten).
+   In Chrome: Einstellungen -> System -> "Grafikbeschleunigung
+   verwenden, wenn verfügbar" einschalten.
+
+>> Einstellungen völlig verstellt
+   Jarvis beenden, einstellungen.json löschen, neu starten.
+   (Schlüssel danach neu eintragen.)
+
+
+---------------------------------------------------------------------
+15. DATENSCHUTZ: WAS VERLÄSST MEINEN PC?
+---------------------------------------------------------------------
+Kurz gesagt: Mit Ollama bleiben die KI-Anfragen auf deinem PC. Mit
+Claude oder OpenAI gehen sie an den Anbieter. Jarvis hilft dir dabei,
+private Dinge trotzdem lokal zu halten.
+
+Oben rechts neben der Modellauswahl zeigt eine Anzeige, wo du gerade
+bist:
+  LOKAL         die KI läuft auf deinem PC (Ollama, LM Studio)
+  CLOUD         die KI läuft beim Anbieter (Claude, OpenAI ...)
+  STRIKT LOKAL  nichts verlässt den PC
+  🔒 LOKAL BEANTWORTET   eine private Nachricht wurde lokal beantwortet
+Ein Klick darauf öffnet die Datenschutz-Einstellungen.
+
+Einstellungen -> Datenschutz:
+
+  PRIVAT-WEICHE (Standard: an)
+  Ist eine Cloud-KI gewählt und deine Nachricht enthält private Daten,
+  beantwortet Ollama sie stattdessen lokal. Im Chat steht dann:
+     "🔒 Erkannt: Telefonnummer · lokal beantwortet von ..."
+  Erkannt werden:
+     Telefonnummern, E-Mail-Adressen, IBAN, Kartennummern, Adressen,
+     Postleitzahl mit Ort, API-Schlüssel, und Wörter wie Passwort, PIN,
+     TAN, Diagnose, Arzt, Medikament, Kontostand, Gehalt, Steuer-ID,
+     Ausweisnummer.
+     Außerdem alles, was mit "privat:" beginnt, z.B.
+        privat: Wie spreche ich das Thema mit meinem Chef an?
+     und deine EIGENEN STICHWÖRTER (z.B. Namen aus der Familie).
+  Läuft Ollama nicht, schickt Jarvis die Nachricht NICHT in die Cloud,
+  sondern sagt Bescheid. Mit "Trotzdem an die Cloud senden" kannst du
+  sie bewusst doch schicken.
+  Private Nachrichten und ihre Antworten werden auch später nicht als
+  Gesprächsverlauf an die Cloud geschickt.
+
+  EHRLICH: Die Erkennung arbeitet mit Mustern und Wortlisten. Nummern,
+  E-Mails und IBANs findet sie zuverlässig. Einen Satz wie "meiner
+  Mutter geht es schlecht" erkennt sie nicht sicher. Für so etwas
+  "privat:" davorschreiben oder gleich lokal arbeiten.
+
+  GEDÄCHTNIS AN CLOUD-KI SENDEN (Standard: aus)
+  Aus: Dein Gedächtnis bleibt auf dem PC. Claude/OpenAI kennen deine
+  Notizen dann nicht, sie können z.B. beim Briefing nicht sagen, was
+  heute ansteht. "Merk dir ..." und "Vergiss ..." funktionieren
+  trotzdem, Jarvis erledigt sie lokal und schickt nichts weg.
+  An: Das Gedächtnis geht bei JEDER Anfrage an den Cloud-Anbieter mit.
+
+  STRIKT LOKAL (Standard: aus)
+  Nichts verlässt deinen PC. Gesperrt werden: Claude, OpenAI, ElevenLabs,
+  Wetter, Websuche und die Spracheingabe des Browsers. Jarvis nutzt nur
+  Ollama und nur Stimmen, die auf deinem PC installiert sind.
+  Du musst dann tippen.
+
+Was in den anderen Modi den PC verlässt, auch mit Ollama:
+  - SPRACHEINGABE: Die Spracherkennung von Chrome und Edge läuft über
+    einen Online-Dienst des Browsers (Chrome: Google, Edge: Microsoft).
+    Wer das nicht will: tippen oder "Strikt lokal".
+  - STIMME: Mit ElevenLabs geht der gesprochene Text an ElevenLabs.
+    Browser-Stimmen mit "Online" oder "Natural" im Namen laufen über
+    Server von Microsoft bzw. Google. Die Windows-Stimmen ohne diesen
+    Zusatz laufen lokal.
+  - WETTER: Nur der Ortsname geht an Open-Meteo.
+  - WEBSUCHE (nur Claude): Claude sucht bei Bedarf im Web.
+
+Unter Einstellungen -> Datenschutz -> "Was verlässt gerade deinen PC?"
+siehst du das live für deine aktuellen Einstellungen.
+
+Was Claude, OpenAI und Co. mit den Daten machen, regeln deren
+Datenschutz- und Nutzungsbedingungen. Die solltest du lesen, bevor du
+dort Persönliches eingibst.
+
+
+---------------------------------------------------------------------
+16. SICHERHEIT
+---------------------------------------------------------------------
+  - Jarvis ist nur von deinem eigenen PC aus erreichbar (127.0.0.1).
+    Andere Geräte im Netzwerk kommen nicht dran.
+  - Schlüssel stehen im Klartext in einstellungen.json. Diese Datei
+    NIEMALS weitergeben, hochladen oder in Videos zeigen.
+  - Beim Teilen des Ordners (z.B. GitHub) einstellungen.json und
+    gedaechtnis.json weglassen. Die beiliegende .gitignore macht das
+    bei Git automatisch.
+  - Im Stream: Einstellungen nicht offen zeigen, wenn Schlüssel
+    eingetragen sind. Angezeigt werden zwar nur die letzten 4 Zeichen,
+    aber sicher ist sicher.
+  - Was bei welcher Einstellung den PC verlässt: siehe Abschnitt 15.
+
+
+---------------------------------------------------------------------
+17. FÜR BASTLER: EIGENE OBERFLÄCHE BAUEN
+---------------------------------------------------------------------
+Kopiere eine Datei aus "oberflaechen", z.B. band.html, und ändere den
+Teil in Jarvis.registerTheme({...}):
+
+  Jarvis.registerTheme({
+    id: "meinname",
+    init(J)  { ... einmal beim Start ... },
+    resize(breite, hoehe) { ... bei Größenänderung ... },
+    draw(ctx, breite, hoehe, S) { ... jedes Bild (ca. 60 pro Sekunde) ... }
+  });
+
+Was in S steht (alles Zahlen):
+  S.level   Lautstärke der Stimme 0..1  (springt beim Sprechen)
+  S.mic     Lautstärke deines Mikrofons 0..1
+  S.speak   0..1  weicher Übergang "spricht"
+  S.think   0..1  weicher Übergang "denkt nach"
+  S.listen  0..1  weicher Übergang "hört zu" (0.35 = Mikro an, still)
+  S.pulse   0..1  kurzer Impuls bei Ereignissen
+  S.t       Zeit in Sekunden,  S.dt  Zeit seit dem letzten Bild
+Ereignisse:  J.on("state" | "sentence" | "module" | "event" | "message", fn)
+Hilfen:      J.sprite(r,g,b) leuchtender Punkt,  J.glowAt(ctx,sprite,x,y,größe,alpha)
+Akzentfarbe: in <style> :root{ --ac:#hex; --ac-rgb:r,g,b }
+
+Neue Oberfläche in die Liste der Einstellungen aufnehmen:
+  core/core.js -> J.THEMES  und  server.py -> THEMES
+
+Viel Spaß!

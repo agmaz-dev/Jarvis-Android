@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+*.jks
+!app/test-signing.keystore
+einstellungen.json
+gedaechtnis.json

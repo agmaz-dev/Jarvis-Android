@@ -1,0 +1,14 @@
+{
+  "name": "Jarvis",
+  "short_name": "Jarvis",
+  "description": "Persönlicher KI-Assistent mit Stimme, Gedächtnis und Automation",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#06142c",
+  "theme_color": "#06142c",
+  "lang": "de",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

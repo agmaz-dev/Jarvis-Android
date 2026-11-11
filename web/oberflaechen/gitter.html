@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS · Gitter</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/core/core.css">
+<style>
+  /* Oberfläche 5 von 7 · GITTER */
+  :root{--ac:#39e6a8;--ac-rgb:57,230,168;--bg:#020b08;--glass:rgba(4,20,15,.62)}
+  #gt-cap{position:fixed;left:22px;top:70px;z-index:5;pointer-events:none;font-family:var(--mono)}
+  #gt-cap h1{margin:0;font-size:13px;letter-spacing:.3em;font-weight:600;color:var(--ac)}
+  #gt-cap p{margin:4px 0 0;font-size:11px;color:var(--mut);letter-spacing:.1em}
+  #gt-hud{position:fixed;right:22px;bottom:22px;z-index:5;font-family:var(--mono);font-size:10.5px;color:rgba(57,230,168,.65);text-align:right;line-height:1.6;pointer-events:none}
+  @media (max-width:1100px){#gt-hud{display:none}}
+</style>
+</head>
+<body>
+<div id="gt-cap"><h1 id="gtName">JARVIS</h1><p id="gtState">LATTICE · BEREIT</p></div>
+<div id="gt-hud"><div id="gtA">SCHALEN 4</div><div id="gtB">KANTEN 0</div><div id="gtC">SIGNAL 0.00</div></div>
+<script src="/core/backend.js"></script>
+<script src="/core/core.js"></script>
+<script>
+(function () {
+  const J = window.Jarvis, $ = id => document.getElementById(id), TAU = Math.PI * 2;
+  let shells = [], shards = [], sparks = [], cx = 0, cy = 0, R = 200, nEdges = 0;
+  function makeShell(n, r, i) {
+    const v = [], ga = Math.PI * (3 - Math.sqrt(5));
+    for (let k = 0; k < n; k++) { const y = 1 - (k / (n - 1)) * 2, rad = Math.sqrt(1 - y * y), th = ga * k + i, j = 1 + (Math.random() - 0.5) * 0.28;
+      v.push({ x: Math.cos(th) * rad * j, y: y * j, z: Math.sin(th) * rad * j, id: Math.random() * 100 }); }
+    const e = new Set(), E = [];
+    v.forEach((a, ai) => { const d = v.map((b, bi) => [(a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2, bi]).sort((p, q) => p[0] - q[0]);
+      for (let m = 1; m <= 3; m++) { const bi = d[m][1], key = ai < bi ? ai + "-" + bi : bi + "-" + ai; if (!e.has(key)) { e.add(key); E.push([ai, bi]); } } });
+    const ax = norm({ x: Math.random() - .5, y: 1, z: Math.random() - .5 });
+    return { v, E, r, ax, sp: (0.08 + Math.random() * 0.1) * (i % 2 ? -1 : 1), ang: Math.random() * TAU };
+  }
+  const norm = a => { const l = Math.hypot(a.x, a.y, a.z) || 1; return { x: a.x / l, y: a.y / l, z: a.z / l }; };
+  function rotate(p, ax, ang) {   // Rodrigues
+    const c = Math.cos(ang), s = Math.sin(ang), d = p.x * ax.x + p.y * ax.y + p.z * ax.z;
+    return { x: p.x * c + (ax.y * p.z - ax.z * p.y) * s + ax.x * d * (1 - c), y: p.y * c + (ax.z * p.x - ax.x * p.z) * s + ax.y * d * (1 - c), z: p.z * c + (ax.x * p.y - ax.y * p.x) * s + ax.z * d * (1 - c) };
+  }
+  function build() {
+    shells = [makeShell(12, 0.42, 0), makeShell(20, 0.62, 1), makeShell(28, 0.82, 2), makeShell(36, 1.0, 3)];
+    nEdges = shells.reduce((n, s) => n + s.E.length, 0);
+    shards = [];
+    for (let i = 0; i < 34; i++) {
+      const u = Math.random() * TAU, v = Math.acos(2 * Math.random() - 1), r = 1.05 + Math.random() * 0.35, n = { x: Math.sin(v) * Math.cos(u), y: Math.cos(v), z: Math.sin(v) * Math.sin(u) };
+      const tdir = norm({ x: Math.random() - .5, y: Math.random() - .5, z: Math.random() - .5 }), L = 0.06 + Math.random() * 0.2;
+      shards.push({ a: { x: n.x * r, y: n.y * r, z: n.z * r }, b: { x: n.x * r + tdir.x * L, y: n.y * r + tdir.y * L, z: n.z * r + tdir.z * L } });
+    }
+    sparks = []; for (let i = 0; i < 120; i++) { const u = Math.random() * TAU, v = Math.acos(2 * Math.random() - 1), r = 0.15 + 0.75 * Math.random(); sparks.push({ x: Math.sin(v) * Math.cos(u) * r, y: Math.cos(v) * r, z: Math.sin(v) * Math.sin(u) * r, p: Math.random() * TAU }); }
+  }
+  const F = 3.2;
+  function P(p, o) { const k = F / (F + p.z); o.x = cx + p.x * R * k; o.y = cy + p.y * R * k; o.z = p.z; o.k = k; return o; }
+  J.registerTheme({
+    id: "gitter",
+    init(J) {
+      build();
+      const nm = (J.settings.name || "Jarvis").toUpperCase(); $("gtName").textContent = nm; document.title = nm + " · Gitter";
+      $("gtB").textContent = "KANTEN " + nEdges;
+      J.on("state", s => { $("gtState").textContent = "LATTICE · " + { idle: "BEREIT", listening: "HÖRT ZU", thinking: "DENKT NACH", speaking: "SPRICHT" }[s]; });
+    },
+    resize(w, h) { cx = w / 2; cy = h * 0.45; R = Math.min(w * 0.3, h * 0.35); },
+    draw(ctx, w, h, S) {
+      const t = S.t, dt = S.dt, sp = J.sprite, o = {}, q = {};
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+      const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.7);
+      bg.addColorStop(0, "#08251c"); bg.addColorStop(0.45, "#03110c"); bg.addColorStop(1, "#010604");
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = "lighter";
+      const speed = 1 + S.think * 2.6 + S.speak * 0.4;
+      const tint = S.think > 0.05 ? [57 + 40 * S.think, 230, 168 + 70 * S.think] : [57, 230, 168];
+      // Kern-Strahlen
+      const core = R * (0.35 + S.level * 0.45 + S.pulse * 0.15 + S.mic * 0.15);
+      J.glowAt(ctx, sp(57, 230, 168), cx, cy, R * (1.8 + S.level * 0.6), 0.22 + S.level * 0.2);
+      ctx.save(); ctx.translate(cx, cy);
+      for (let i = 0; i < 6; i++) { ctx.save(); ctx.rotate(t * 0.15 + i * Math.PI / 6 * 2); ctx.scale(0.05, 2.6 + S.level * 1.5); J.glowAt(ctx, sp(190, 255, 230), 0, 0, core * 1.4, 0.28 + S.level * 0.3); ctx.restore(); }
+      ctx.restore();
+      J.glowAt(ctx, sp(200, 255, 235), cx, cy, core * 1.5, 0.75);
+      J.glowAt(ctx, sp(255, 255, 255, true), cx, cy, core * 0.45, 0.95);
+      // Funken innen
+      for (const s of sparks) { P({ x: s.x * Math.cos(t * .2) - s.z * Math.sin(t * .2), y: s.y, z: s.x * Math.sin(t * .2) + s.z * Math.cos(t * .2) }, o); J.glowAt(ctx, sp(170, 255, 220, true), o.x, o.y, 4 * o.k, 0.3 + 0.4 * Math.sin(t * 2 + s.p)); }
+      // Schalen
+      shells.forEach((sh, si) => {
+        sh.ang += dt * sh.sp * speed;
+        const pv = sh.v.map(v => {
+          const disp = 1 + S.level * 0.3 * (J.noise(v.id + t * 3) - 0.35) + S.pulse * 0.05;
+          const r = rotate({ x: v.x * sh.r * disp, y: v.y * sh.r * disp, z: v.z * sh.r * disp }, sh.ax, sh.ang);
+          return P(r, {});
+        });
+        const back = [], front = [];
+        sh.E.forEach(([a, b]) => { const pa = pv[a], pb = pv[b]; ((pa.z + pb.z) > 0 ? back : front).push(pa.x, pa.y, pb.x, pb.y); });
+        const flash = 0.45 + S.level * 0.5 + S.pulse * 0.3;
+        ctx.strokeStyle = `rgba(${tint.map(x => x | 0)},${0.18 * flash})`; ctx.lineWidth = 1; ctx.beginPath();
+        for (let k = 0; k < back.length; k += 4) { ctx.moveTo(back[k], back[k + 1]); ctx.lineTo(back[k + 2], back[k + 3]); } ctx.stroke();
+        ctx.strokeStyle = `rgba(${tint.map(x => x | 0)},${0.55 * flash})`; ctx.lineWidth = 1.6 + si * 0.25; ctx.beginPath();
+        for (let k = 0; k < front.length; k += 4) { ctx.moveTo(front[k], front[k + 1]); ctx.lineTo(front[k + 2], front[k + 3]); } ctx.stroke();
+        pv.forEach(p => { if (p.z < 0) J.glowAt(ctx, sp(180, 255, 225, true), p.x, p.y, 5 + S.level * 6, 0.5 * flash); });
+      });
+      // Splitter außen
+      const ang = t * 0.05 * speed, ax = { x: 0, y: 1, z: 0 };
+      ctx.strokeStyle = `rgba(57,230,168,${0.35 + S.level * 0.3})`; ctx.lineWidth = 1.4; ctx.beginPath();
+      for (const s of shards) { P(rotate(s.a, ax, ang), o); P(rotate(s.b, ax, ang), q); ctx.moveTo(o.x, o.y); ctx.lineTo(q.x, q.y); }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (((t * 4) | 0) % 2 === 0) $("gtC").textContent = "SIGNAL " + S.level.toFixed(2);
+    }
+  });
+})();
+</script>
+</body>
+</html>

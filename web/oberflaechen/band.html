@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS · Band</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/core/core.css">
+<style>
+  /* Oberfläche 7 von 7 · BAND */
+  :root{--ac:#3fe0c5;--ac-rgb:63,224,197;--bg:#020f0d;--glass:rgba(4,22,20,.62)}
+  #bd-cap{position:fixed;left:22px;top:70px;z-index:5;pointer-events:none}
+  #bd-cap h1{margin:0;font-size:13px;letter-spacing:.32em;font-weight:600}
+  #bd-cap p{margin:4px 0 0;font-size:11px;color:var(--mut);letter-spacing:.12em}
+</style>
+</head>
+<body>
+<div id="bd-cap"><h1 id="bdName">JARVIS</h1><p id="bdState">ribbon · bereit</p></div>
+<script src="/core/backend.js"></script>
+<script src="/core/core.js"></script>
+<script>
+(function () {
+  const J = window.Jarvis, $ = id => document.getElementById(id), TAU = Math.PI * 2;
+  let cx = 0, cy = 0, R = 200, core = [], rot = 0;
+  const RIBBONS = [
+    { tilt: [0.95, 0.15], width: 0.22, twist: 1, n: 26, sp: 1, wave: 3 },
+    { tilt: [1.25, -0.6], width: 0.16, twist: 2, n: 22, sp: -0.7, wave: 4 },
+    { tilt: [0.7, 0.9], width: 0.12, twist: 1, n: 18, sp: 0.5, wave: 5 }
+  ];
+  J.registerTheme({
+    id: "band",
+    init(J) {
+      const nm = (J.settings.name || "Jarvis").toUpperCase(); $("bdName").textContent = nm; document.title = nm + " · Band";
+      for (let i = 0; i < 260; i++) { const u = Math.random() * TAU, v = Math.acos(2 * Math.random() - 1), r = 0.11 * Math.pow(Math.random(), 0.7); core.push({ x: Math.sin(v) * Math.cos(u) * r, y: Math.cos(v) * r, z: Math.sin(v) * Math.sin(u) * r, p: Math.random() * TAU }); }
+      J.on("state", s => { $("bdState").textContent = "ribbon · " + { idle: "bereit", listening: "hört zu", thinking: "denkt nach", speaking: "spricht" }[s]; });
+    },
+    resize(w, h) { cx = w / 2; cy = h * 0.45; R = Math.min(w * 0.3, h * 0.34); },
+    draw(ctx, w, h, S) {
+      const t = S.t, dt = S.dt, sp = J.sprite;
+      rot += dt * (0.18 + S.think * 1.1 + S.speak * 0.2);
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+      const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.7);
+      bg.addColorStop(0, "#06231f"); bg.addColorStop(0.5, "#031311"); bg.addColorStop(1, "#010706");
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = "lighter";
+      const F = 3.4, N = 150;
+      RIBBONS.forEach((rb, ri) => {
+        const ca = Math.cos(rb.tilt[0]), sa = Math.sin(rb.tilt[0]), cb = Math.cos(rb.tilt[1] + rot * rb.sp), sb = Math.sin(rb.tilt[1] + rot * rb.sp);
+        for (let j = 0; j < rb.n; j++) {
+          const off = (j / (rb.n - 1) - 0.5) * rb.width * (1 + S.level * 0.5);
+          ctx.beginPath(); let zsum = 0;
+          for (let i = 0; i <= N; i++) {
+            const u = i / N * TAU;
+            const rr = 1 + 0.05 * Math.sin(rb.wave * u + t * 0.8 + ri) + S.level * 0.12 * Math.sin(6 * u - t * 8 + j * 0.1) + S.mic * 0.06 * Math.sin(8 * u + t * 6);
+            const tw = rb.twist * u + t * 0.3 + ri;
+            const nx = Math.cos(u) * Math.cos(tw), ny = Math.sin(tw), nz = Math.sin(u) * Math.cos(tw);
+            let x = Math.cos(u) * rr + nx * off, y = ny * off, z = Math.sin(u) * rr + nz * off;
+            let y1 = y * ca - z * sa, z1 = y * sa + z * ca;
+            let x2 = x * cb + z1 * sb, z2 = -x * sb + z1 * cb;
+            const k = F / (F + z2); zsum += z2;
+            const px = cx + x2 * R * k, py = cy + y1 * R * k;
+            i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+          }
+          const edge = 1 - Math.abs(j / (rb.n - 1) - 0.5) * 1.4;
+          ctx.strokeStyle = `rgba(${ri === 1 ? "90,240,210" : "60,215,190"},${(0.07 + 0.09 * edge) * (1 + S.level * 1.2 + S.pulse * 0.5)})`;
+          ctx.lineWidth = 1; ctx.stroke();
+        }
+      });
+      // Kern
+      const cr = 1 + S.level * 0.9 + S.pulse * 0.3;
+      J.glowAt(ctx, sp(63, 224, 197), cx, cy, R * (0.9 + S.level * 0.5), 0.3 + S.level * 0.25);
+      for (const p of core) {
+        const a = t * 0.5, x = p.x * Math.cos(a) - p.z * Math.sin(a), z = p.x * Math.sin(a) + p.z * Math.cos(a);
+        const k = F / (F + z);
+        J.glowAt(ctx, sp(150, 255, 220, true), cx + x * R * cr * k, cy + p.y * R * cr * k, 4 * k, 0.35 + 0.35 * Math.sin(t * 3 + p.p));
+      }
+      J.glowAt(ctx, sp(220, 255, 245, true), cx, cy, R * 0.12 * cr, 0.95);
+      if (S.listen > 0.3) J.glowAt(ctx, sp(120, 255, 220), cx, cy, R * (0.5 + S.mic), (S.listen - 0.3) * 0.3 + S.mic * 0.4);
+      ctx.globalAlpha = 1;
+    }
+  });
+})();
+</script>
+</body>
+</html>

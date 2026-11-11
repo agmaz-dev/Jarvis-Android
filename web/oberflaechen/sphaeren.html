@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS · Sphären</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/core/core.css">
+<style>
+  /* Oberfläche 3 von 7 · SPHÄREN */
+  :root{--ac:#6cb6ff;--ac-rgb:108,182,255;--bg:#04060c}
+  #sp-cap{position:fixed;left:22px;top:70px;z-index:5;pointer-events:none}
+  #sp-cap h1{margin:0;font-size:13px;letter-spacing:.32em;font-weight:600}
+  #sp-cap p{margin:4px 0 0;font-size:11px;color:var(--mut);letter-spacing:.12em}
+  #sp-foot{position:fixed;right:22px;bottom:22px;z-index:5;font-size:11px;letter-spacing:.18em;color:var(--mut);text-align:right;pointer-events:none}
+  @media (max-width:1100px){#sp-foot{display:none}}
+</style>
+</head>
+<body>
+<div id="sp-cap"><h1 id="spName">JARVIS</h1><p id="spState">gaze → kamera</p></div>
+<div id="sp-foot">EIN HEISSER KERN IN NEURONALEN SCHALEN<br><span id="spCount"></span></div>
+<script src="/core/backend.js"></script>
+<script src="/core/core.js"></script>
+<script>
+(function () {
+  const J = window.Jarvis, $ = id => document.getElementById(id), TAU = Math.PI * 2;
+  let pts = [], edges = [], panels = [], labels = [], cx = 0, cy = 0, R = 200, rotY = 0;
+  const LBL = [["GEDÄCHTNIS", "gedaechtnis"], ["STIMME", "stimme"], ["WEBSUCHE", "suche"], ["AUTOMATION", "automation"], ["SYSTEM", "system"], ["WETTER", "wetter"]];
+  function fib(n, r0, r1, layer) {
+    const out = [], ga = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < n; i++) {
+      const y = 1 - (i / (n - 1)) * 2, rad = Math.sqrt(1 - y * y), th = ga * i, r = r0 + (r1 - r0) * Math.random();
+      out.push({ x: Math.cos(th) * rad * r, y: y * r, z: Math.sin(th) * rad * r, layer, ph: Math.random() * TAU });
+    }
+    return out;
+  }
+  function knn(list, k, maxd) {
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i], d = [];
+      for (let j = 0; j < list.length; j++) if (j !== i) { const b = list[j]; d.push([(a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2, j]); }
+      d.sort((p, q) => p[0] - q[0]);
+      for (let m = 0; m < k; m++) if (d[m][0] < maxd * maxd && d[m][1] > i) edges.push([a, list[d[m][1]]]);
+    }
+  }
+  function build() {
+    const outer = fib(320, 0.9, 1.0, 0), inner = fib(170, 0.5, 0.58, 1), core = [];
+    for (let i = 0; i < 170; i++) { const u = Math.random() * TAU, v = Math.acos(2 * Math.random() - 1), r = 0.3 * Math.pow(Math.random(), 1.6);
+      core.push({ x: r * Math.sin(v) * Math.cos(u), y: r * Math.cos(v), z: r * Math.sin(v) * Math.sin(u), layer: 2, ph: Math.random() * TAU }); }
+    pts = outer.concat(inner, core); edges = [];
+    knn(outer, 3, 0.32); knn(inner, 3, 0.3); knn(core, 2, 0.16);
+    for (let i = 0; i < 70; i++) edges.push([inner[(Math.random() * inner.length) | 0], core[(Math.random() * core.length) | 0]]);
+    for (let i = 0; i < 40; i++) { const a = outer[(Math.random() * outer.length) | 0]; let best = null, bd = 9; inner.forEach(b => { const d = (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2; if (d < bd) { bd = d; best = b; } }); edges.push([a, best]); }
+    panels = [];
+    for (let i = 0; i < 18; i++) {
+      const u = Math.random() * TAU, v = Math.acos(2 * Math.random() - 1), r = 1.15 + Math.random() * 0.32;
+      const n = { x: Math.sin(v) * Math.cos(u), y: Math.cos(v), z: Math.sin(v) * Math.sin(u) };
+      let a = Math.abs(n.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+      const t1 = norm(cross(n, a)), t2 = cross(n, t1), s1 = 0.08 + Math.random() * 0.12, s2 = 0.05 + Math.random() * 0.1, rot = Math.random() * TAU;
+      const c1 = { x: t1.x * Math.cos(rot) + t2.x * Math.sin(rot), y: t1.y * Math.cos(rot) + t2.y * Math.sin(rot), z: t1.z * Math.cos(rot) + t2.z * Math.sin(rot) }, c2 = cross(n, c1);
+      panels.push({ c: { x: n.x * r, y: n.y * r, z: n.z * r }, u: c1, v: c2, s1, s2, ph: Math.random() * TAU });
+    }
+    labels = LBL.map((l, i) => ({ text: l[0], mod: l[1], p: (i % 2 ? inner : outer)[(i * 37 + 11) % (i % 2 ? inner.length : outer.length)], act: 0 }));
+  }
+  const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+  const norm = a => { const l = Math.hypot(a.x, a.y, a.z) || 1; return { x: a.x / l, y: a.y / l, z: a.z / l }; };
+  let ry = 0, rx = 0.3, cosY = 1, sinY = 0, cosX = 1, sinX = 0, F = 3.4, scaleLayer = [1, 1, 1];
+  function proj(p, o, S) {
+    let s = scaleLayer[p.layer];
+    if (p.layer === 2) s *= 1 + S.level * 0.35 * Math.sin(S.t * 6 + p.ph);
+    const x = p.x * s, y = p.y * s, z = p.z * s;
+    const x1 = x * cosY + z * sinY, z1 = -x * sinY + z * cosY;
+    const y2 = y * cosX - z1 * sinX, z2 = y * sinX + z1 * cosX;
+    const k = F / (F + z2);
+    o.x = cx + x1 * R * k; o.y = cy + y2 * R * k; o.z = z2; o.k = k; return o;
+  }
+  J.registerTheme({
+    id: "sphaeren",
+    init(J) {
+      build();
+      const nm = (J.settings.name || "Jarvis").toUpperCase(); $("spName").textContent = nm; document.title = nm + " · Sphären";
+      $("spCount").textContent = pts.length + " NEURONEN · " + edges.length + " VERBINDUNGEN";
+      J.on("state", s => { $("spState").textContent = { idle: "bereit", listening: "hört zu", thinking: "denkt nach", speaking: "spricht" }[s]; });
+      J.on("module", m => labels.forEach(l => { if (l.mod === m) l.act = 1; }));
+    },
+    resize(w, h) { cx = w / 2; cy = h * 0.45; R = Math.min(w * 0.33, h * 0.36); },
+    draw(ctx, w, h, S) {
+      const t = S.t, dt = S.dt, sp = J.sprite;
+      ry += dt * 0.1 * (1 + S.think * 3 + S.speak * 0.4); rx = 0.28 + 0.08 * Math.sin(t * 0.17);
+      cosY = Math.cos(ry); sinY = Math.sin(ry); cosX = Math.cos(rx); sinX = Math.sin(rx);
+      scaleLayer = [1 + S.pulse * 0.03, 1 + S.level * 0.12 + S.listen * 0.03 + S.mic * 0.08, 1 + S.level * 0.25];
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+      const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.7);
+      bg.addColorStop(0, "#0b1426"); bg.addColorStop(0.5, "#05080f"); bg.addColorStop(1, "#020306");
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      const o = { x: 0, y: 0, z: 0, k: 1 };
+      // Paneele hinten
+      const drawPanels = front => {
+        for (const pn of panels) {
+          const c = proj({ x: pn.c.x, y: pn.c.y, z: pn.c.z, layer: 0 }, {}, S);
+          if ((c.z < 0) !== front) continue;
+          const f = 1 + 0.06 * Math.sin(t + pn.ph);
+          const cs = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, b]) => proj({ x: pn.c.x + (pn.u.x * pn.s1 * a + pn.v.x * pn.s2 * b) * f, y: pn.c.y + (pn.u.y * pn.s1 * a + pn.v.y * pn.s2 * b) * f, z: pn.c.z + (pn.u.z * pn.s1 * a + pn.v.z * pn.s2 * b) * f, layer: 0 }, {}, S));
+          ctx.globalAlpha = front ? 1 : 0.5;
+          ctx.fillStyle = `rgba(200,220,255,${0.05 + S.think * 0.04})`; ctx.strokeStyle = `rgba(230,240,255,${0.22 + S.level * 0.2})`; ctx.lineWidth = 1;
+          ctx.beginPath(); cs.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+      };
+      drawPanels(false);
+      // Schalen
+      const shell = (r, c1, c2, rim) => {
+        const rr = R * r;
+        const g = ctx.createRadialGradient(cx, cy, rr * 0.2, cx, cy, rr * 1.04);
+        g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.72, c1); g.addColorStop(0.965, c2); g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rr * 1.04, 0, TAU); ctx.fill();
+        ctx.strokeStyle = rim; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, cy, rr * 0.985, 0, TAU); ctx.stroke();
+      };
+      const kOuter = F / F, so = scaleLayer[0], si = scaleLayer[1];
+      shell(1.0 * so * 1.02, "rgba(40,90,180,0.10)", `rgba(110,180,255,${0.38 + S.listen * 0.15 + S.mic * 0.3})`, `rgba(170,215,255,${0.45 + S.pulse * 0.3})`);
+      shell(0.56 * si * 1.04, "rgba(90,60,170,0.16)", `rgba(140,150,255,${0.42 + S.level * 0.3})`, `rgba(190,200,255,${0.5 + S.level * 0.4})`);
+      // Verbindungen
+      ctx.globalCompositeOperation = "lighter";
+      const B = [[], [], []];
+      for (const [a, b] of edges) {
+        const p = proj(a, {}, S), q = proj(b, {}, S), d = (p.z + q.z) / 2;
+        B[d < -0.3 ? 0 : d < 0.3 ? 1 : 2].push(p.x, p.y, q.x, q.y);
+      }
+      const ea = 0.07 + S.level * 0.12 + S.think * 0.05;
+      B.forEach((b, i) => { ctx.strokeStyle = `rgba(160,205,255,${ea * (0.6 + i * 0.5)})`; ctx.lineWidth = 0.6 + i * 0.2; ctx.beginPath(); for (let k = 0; k < b.length; k += 4) { ctx.moveTo(b[k], b[k + 1]); ctx.lineTo(b[k + 2], b[k + 3]); } ctx.stroke(); });
+      // Punkte
+      for (const p of pts) {
+        proj(p, o, S); const d = 0.5 - o.z * 0.5;
+        const c = p.layer === 2 ? [200, 230, 255] : p.layer === 1 ? [190, 170, 255] : [150, 200, 255];
+        J.glowAt(ctx, sp(c[0], c[1], c[2], true), o.x, o.y, (p.layer === 2 ? 7 : 5.5) * o.k * (1 + S.level * 0.4), 0.3 + 0.6 * (1 - d * 0.7));
+      }
+      // Kern
+      const core = R * (0.5 + S.level * 0.5 + S.pulse * 0.15);
+      J.glowAt(ctx, sp(140, 110, 255), cx, cy, core * 2.2, 0.35 + S.think * 0.2);
+      J.glowAt(ctx, sp(120, 220, 255), cx, cy, core * 1.1, 0.75 + S.level * 0.25);
+      J.glowAt(ctx, sp(255, 255, 255, true), cx, cy, core * 0.3, 0.9);
+      ctx.globalCompositeOperation = "source-over";
+      drawPanels(true);
+      // Beschriftungen
+      ctx.font = "600 10.5px Segoe UI,system-ui,sans-serif"; ctx.textBaseline = "middle";
+      for (const l of labels) {
+        l.act *= Math.exp(-dt * 0.6); if (l.mod === "stimme") l.act = Math.max(l.act, S.speak * 0.8);
+        proj(l.p, o, S); const a = (o.z < 0.2 ? 0.9 : 0.35) * (0.6 + l.act * 0.4);
+        ctx.globalAlpha = a; ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(o.x, o.y, 3 + l.act * 3, 0, TAU); ctx.fill();
+        if (l.act > 0.05) { ctx.globalCompositeOperation = "lighter"; J.glowAt(ctx, sp(150, 210, 255), o.x, o.y, 40 * l.act + 10, l.act); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = a; }
+        ctx.fillStyle = "rgba(235,242,255,1)"; ctx.fillText(l.text, o.x + 8, o.y);
+      }
+      ctx.globalAlpha = 1;
+    }
+  });
+})();
+</script>
+</body>
+</html>

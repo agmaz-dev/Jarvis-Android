@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jarvis</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#06142c">
+<style>html,body{margin:0;height:100%;background:#06142c}</style></head>
+<body><script>
+(function () {
+  var T = { vortex: "/jarvis.html", nova: "/oberflaechen/nova.html", sphaeren: "/oberflaechen/sphaeren.html", aura: "/oberflaechen/aura.html",
+    gitter: "/oberflaechen/gitter.html", begleiter: "/oberflaechen/begleiter.html", band: "/oberflaechen/band.html" };
+  var id = "vortex";
+  try { var s = JSON.parse(localStorage.getItem("jvb-settings") || "{}"); if (s && T[s.oberflaeche]) id = s.oberflaeche; } catch (e) { }
+  location.replace(T[id]);
+})();
+</script></body></html>

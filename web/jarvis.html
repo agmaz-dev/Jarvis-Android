@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS · Vortex</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/core/core.css">
+<style>
+  /* Oberfläche 1 von 7 · VORTEX (Hauptoberfläche) */
+  :root{--ac:#4fb6ff;--ac-rgb:79,182,255;--bg:#02060e}
+  #vx-top{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:12;display:flex;height:38px;border-radius:10px;overflow:hidden;font-family:var(--mono)}
+  #vx-top>div{display:flex;flex-direction:column;justify-content:center;padding:0 14px;border-right:1px solid var(--brd2);white-space:nowrap}
+  #vx-top>div:last-child{border-right:0}
+  #vx-top small{font-size:8.5px;letter-spacing:.2em;color:var(--mut)}
+  #vx-top b{font-size:13px;font-weight:600;color:#cfe6ff;letter-spacing:.04em}
+  #vx-top .live{flex-direction:row;align-items:center;gap:8px;font-size:11px;letter-spacing:.18em;color:var(--ac)}
+  #vx-top .live i{width:7px;height:7px;border-radius:50%;background:#36e08a;box-shadow:0 0 8px #36e08a;animation:jvBlink 1.6s steps(1) infinite}
+  #vx-top #vxModel{max-width:200px;overflow:hidden;text-overflow:ellipsis}
+  #vx-title{position:fixed;left:20px;top:68px;z-index:5;pointer-events:none}
+  #vx-title h1{margin:0;font-size:30px;letter-spacing:.14em;font-weight:800;color:#fff;text-shadow:0 0 24px rgba(79,182,255,.55)}
+  #vx-title h1 span{color:var(--ac)}
+  #vx-title p{margin:4px 0 0;font-size:11px;letter-spacing:.24em;color:var(--mut);text-transform:uppercase}
+  #vx-title .st{margin-top:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:rgba(207,230,255,.7)}
+  #vx-feed{position:fixed;left:16px;top:160px;width:260px;z-index:5;border-radius:12px;padding:10px 12px;font-family:var(--mono)}
+  #vx-feed h4{margin:0 0 8px;font-size:10px;letter-spacing:.22em;color:var(--ac);display:flex;justify-content:space-between}
+  #vx-feed h4 em{font-style:normal;color:var(--mut)}
+  #vx-feed .it{font-size:11px;line-height:1.35;padding:5px 0;border-top:1px solid var(--brd2);color:rgba(220,235,255,.82);animation:jvIn .3s}
+  #vx-feed .it span{color:var(--mut);margin-right:6px}
+  #vx-feed .it b{font-weight:600;margin-right:6px}
+  #vx-sig{position:fixed;left:16px;bottom:16px;width:300px;height:92px;z-index:5;border-radius:12px;padding:8px 10px}
+  #vx-sig small{font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--mut)}
+  #vx-sig canvas{width:100%;height:66px;display:block}
+  @media (max-width:1720px){#vx-top .opt2{display:none}}
+  @media (max-width:1600px){#vx-top .opt{display:none}}
+  @media (max-width:1250px){#vx-top{display:none}}
+  @media (max-width:1180px){#vx-feed,#vx-sig{display:none}}
+  @media (max-width:860px){#vx-title{top:62px}#vx-title h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div id="vx-top" class="jv-glass">
+  <div class="live"><i></i>ONLINE</div>
+  <div><small>SITZUNG</small><b id="vxSess">00:00:00</b></div>
+  <div><small>UHRZEIT</small><b id="vxClock">--:--:--</b></div>
+  <div class="opt"><small>DATUM</small><b id="vxDate">--</b></div>
+  <div><small>CPU</small><b id="vxCpu">—</b></div>
+  <div class="opt"><small>RAM</small><b id="vxRam">—</b></div>
+  <div class="opt2"><small>KI-KERN</small><b id="vxModel">—</b></div>
+</div>
+<div id="vx-title"><h1 id="vxName">J.A.R.V.I.S.</h1><p>Vortex · Neuronale Schnittstelle</p><div class="st" id="vxStats">MODULE 6 · EREIGNISSE 0</div></div>
+<div id="vx-feed" class="jv-glass"><h4>AKTIVITÄT <em id="vxCount">0</em></h4><div id="vxFeed"></div></div>
+<div id="vx-sig" class="jv-glass"><small>SIGNAL · STIMME <span style="color:var(--ac)">━</span> MIKRO <span style="color:#36e08a">━</span></small><canvas id="vxSigC"></canvas></div>
+
+<script src="/core/backend.js"></script>
+<script src="/core/core.js"></script>
+<script>
+(function () {
+  const J = window.Jarvis;
+  const $ = id => document.getElementById(id);
+  const TAU = Math.PI * 2;
+  let strands = [], parts = [], nodes = [], cx = 0, cy = 0, Hh = 200, R = 80, events = 0, callouts = [];
+  const sig = new Array(240).fill(0), sigM = new Array(240).fill(0);
+  const BLUE = [110, 185, 255], WHITE = [215, 235, 255], ORANGE = [255, 150, 70], CYAN = [90, 230, 255];
+  const NODES = [
+    { id: "stimme", code: "ST", label: "STIMME", col: [90, 220, 255], a: 195 },
+    { id: "gedaechtnis", code: "GD", label: "GEDÄCHTNIS", col: [255, 90, 170], a: 245 },
+    { id: "suche", code: "WS", label: "WEBSUCHE", col: [255, 170, 60], a: 295 },
+    { id: "automation", code: "AU", label: "AUTOMATION", col: [90, 255, 170], a: 345 },
+    { id: "wetter", code: "WE", label: "WETTER", col: [160, 170, 255], a: 30 },
+    { id: "system", code: "SY", label: "SYSTEM", col: [255, 220, 90], a: 150 }
+  ];
+  const KIND2NODE = { timer: "automation", web: "automation", theme: "automation", routine: "automation", briefing: "system", system: "system", wetter: "wetter", gedaechtnis: "gedaechtnis", suche: "suche" };
+
+  function build() {
+    strands = [];
+    for (let i = 0; i < 120; i++) {
+      const orange = Math.random() < 0.14;
+      strands.push({ ph: Math.random() * TAU, r0: 0.12 + 0.88 * Math.pow(Math.random(), 0.75), tw: (0.6 + Math.random()) * (Math.random() < .5 ? -1 : 1) * 2.4,
+        sp: 0.22 + Math.random() * 0.5, wob: Math.random() * TAU, a: 0.07 + Math.random() * 0.1, orange, mix: Math.random() });
+    }
+    parts = [];
+    for (let i = 0; i < 340; i++) parts.push({ s: (Math.random() * strands.length) | 0, u: Math.random(), v: 0.05 + Math.random() * 0.12, sz: 0.6 + Math.random() * 1.6 });
+    nodes = NODES.map(n => Object.assign({}, n, { act: 0, x: 0, y: 0 }));
+  }
+  function pos(st, u, t, S, out) {
+    const y = -Hh + 2 * Hh * u;
+    const prof = 0.32 + 0.68 * Math.pow(Math.sin(Math.PI * u), 0.85) + 0.35 * Math.pow(Math.abs(u - .5) * 2, 6);
+    const amp = 1 + S.level * 0.6 + S.think * 0.12 + S.pulse * 0.18;
+    const r = R * st.r0 * prof * (1 + 0.2 * Math.sin(u * 7 + t * 1.3 + st.wob)) * amp;
+    const th = st.ph + t * st.sp * (1 + S.think * 2.6 + S.speak * 0.7) + u * st.tw;
+    out.x = cx + r * Math.cos(th); out.z = Math.sin(th); out.y = cy + y + 0.08 * r * out.z;
+    return out;
+  }
+  function addFeed(kind, text) {
+    events++;
+    const f = $("vxFeed"), d = document.createElement("div"); d.className = "it";
+    const n = NODES.find(x => x.id === (KIND2NODE[kind] || kind));
+    const col = n ? `rgb(${n.col})` : kind === "fehler" ? "#ff6a6a" : "var(--ac)";
+    d.innerHTML = `<span>${new Date().toLocaleTimeString("de-DE")}</span><b style="color:${col}">${(n ? n.label : kind).toUpperCase()}</b>`;
+    d.appendChild(document.createTextNode(String(text).slice(0, 90)));
+    f.prepend(d); while (f.children.length > 8) f.lastChild.remove();
+    $("vxCount").textContent = events; stats();
+  }
+  let memCount = 0;
+  function stats() { $("vxStats").textContent = `MODULE 6 · EREIGNISSE ${events} · NOTIZEN ${memCount}`; }
+  function poke(id, text) {
+    const n = nodes.find(x => x.id === id); if (!n) return;
+    n.act = 1;
+    if (text) { callouts = callouts.filter(c => c.n !== n); callouts.push({ n, text: String(text).slice(0, 56), t: 4.5 }); }
+  }
+
+  J.registerTheme({
+    id: "vortex",
+    init(J) {
+      build();
+      const nm = (J.settings.name || "Jarvis").toUpperCase();
+      $("vxName").innerHTML = nm.length <= 8 ? nm.split("").join(".") + "<span>.</span>" : nm;
+      document.title = nm + " · Vortex";
+      J.on("module", m => poke(m));
+      J.on("event", e => { addFeed(e.kind, e.text); poke(KIND2NODE[e.kind], e.text); if (e.kind === "gedaechtnis") J.api("/api/memory").then(r => { memCount = r.items.length; stats(); }).catch(() => { }); });
+      J.on("message", m => { if (m.role === "user" && m.text) addFeed("eingang", m.text); });
+      J.on("model", m => { $("vxModel").textContent = m.modell || "—"; });
+      J.on("models", r => { $("vxModel").textContent = r.modell || "keine KI"; });
+      J.api("/api/memory").then(r => { memCount = r.items.length; stats(); }).catch(() => { });
+      const t0 = Date.now();
+      const tick = () => {
+        const s = Math.floor((Date.now() - t0) / 1000), d = new Date();
+        $("vxSess").textContent = [s / 3600 | 0, (s % 3600) / 60 | 0, s % 60].map(x => String(x).padStart(2, "0")).join(":");
+        $("vxClock").textContent = d.toLocaleTimeString("de-DE");
+        $("vxDate").textContent = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+      };
+      tick(); setInterval(tick, 1000);
+      const sys = () => J.api("/api/system").then(s => { $("vxCpu").textContent = s.cpu == null ? "—" : s.cpu + " %"; $("vxRam").textContent = s.ram == null ? "—" : s.ram + " %"; }).catch(() => { });
+      sys(); setInterval(sys, 4000);
+      addFeed("system", "Kern gestartet");
+    },
+    resize(w, h) {
+      cx = w * 0.5; cy = h * 0.43; Hh = Math.min(h * 0.33, w * 0.32); R = Hh * 0.46;
+      const rx = Math.min(w * 0.31, Hh * 2.1), ry = Hh * 0.82;
+      nodes.forEach(n => { const a = n.a * Math.PI / 180; n.x = cx + rx * Math.cos(a); n.y = cy + ry * Math.sin(a); });
+      const c = $("vxSigC"); if (c) { c.width = c.clientWidth * 2; c.height = c.clientHeight * 2; }
+    },
+    draw(ctx, w, h, S) {
+      const t = S.t, dt = S.dt;
+      // Hintergrund
+      const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.75);
+      bg.addColorStop(0, "#0a1a36"); bg.addColorStop(0.45, "#040c1c"); bg.addColorStop(1, "#010309");
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "rgba(79,182,255,0.045)"; ctx.lineWidth = 1; ctx.beginPath();
+      for (let x = (cx % 60); x < w; x += 60) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+      for (let y = (cy % 60); y < h; y += 60) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      ctx.stroke();
+      // Boden-Ellipse
+      ctx.save(); ctx.translate(cx, cy + Hh * 1.02); ctx.scale(1, 0.22);
+      const fl = ctx.createRadialGradient(0, 0, 0, 0, 0, Hh * 1.4);
+      fl.addColorStop(0, `rgba(60,140,255,${0.22 + S.level * 0.25})`); fl.addColorStop(1, "rgba(60,140,255,0)");
+      ctx.fillStyle = fl; ctx.beginPath(); ctx.arc(0, 0, Hh * 1.4, 0, TAU); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(cx, cy + Hh * 1.02); ctx.scale(1, 0.22);
+      ctx.strokeStyle = `rgba(110,190,255,${0.25 + S.listen * 0.35 + S.mic * 0.4})`; ctx.lineWidth = 2.5;
+      for (let k = 0; k < 3; k++) { ctx.globalAlpha = 1 - k * 0.3; ctx.beginPath(); ctx.arc(0, 0, Hh * (0.55 + k * 0.28) * (1 + S.mic * 0.2 * (k + 1)), 0, TAU); ctx.stroke(); }
+      ctx.restore();
+
+      // Verbindungen zu den Modulen
+      ctx.globalCompositeOperation = "lighter";
+      const sp = J.sprite;
+      nodes.forEach(n => {
+        if (n.id === "stimme") n.act = Math.max(n.act, S.speak * 0.75);
+        n.act *= Math.exp(-dt * 0.7);
+        const a = 0.1 + n.act * 0.6;
+        ctx.globalAlpha = 1; ctx.strokeStyle = `rgba(${n.col},${a})`; ctx.lineWidth = 1 + n.act * 1.5;
+        ctx.setLineDash(n.act > 0.15 ? [] : [3, 6]);
+        const mx = (n.x + cx) / 2, my = (n.y + cy) / 2 - 30;
+        ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.quadraticCurveTo(mx, my, cx, cy); ctx.stroke();
+        if (n.act > 0.06) {
+          for (let k = 0; k < 3; k++) {
+            const u = ((t * 0.7 + k / 3) % 1), iu = 1 - u;
+            const px = iu * iu * n.x + 2 * iu * u * mx + u * u * cx, py = iu * iu * n.y + 2 * iu * u * my + u * u * cy;
+            J.glowAt(ctx, sp(n.col[0], n.col[1], n.col[2], true), px, py, 14, n.act);
+          }
+        }
+      });
+      ctx.setLineDash([]);
+
+      // Wirbel-Stränge
+      const P = { x: 0, y: 0, z: 0 }, K = 36;
+      ctx.lineWidth = 0.75;
+      for (const st of strands) {
+        let c = st.orange ? ORANGE : (st.mix < 0.5 ? BLUE : WHITE);
+        if (!st.orange && S.think > 0.02) c = c.map((v, i) => v + (ORANGE[i] - v) * S.think * 0.55 * st.mix);
+        if (S.listen > 0.4 && !st.orange) c = c.map((v, i) => v + (CYAN[i] - v) * (S.listen - 0.35) * 0.6);
+        ctx.strokeStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+        ctx.globalAlpha = Math.min(1, st.a * (1 + S.level * 1.6 + S.think * 0.6 + S.pulse * 0.8));
+        ctx.beginPath();
+        for (let k = 0; k <= K; k++) { pos(st, k / K, t, S, P); if (k) ctx.lineTo(P.x, P.y); else ctx.moveTo(P.x, P.y); }
+        ctx.stroke();
+      }
+      // Teilchen
+      for (const p of parts) {
+        p.u += p.v * dt * (1 + S.level * 2.5 + S.think * 1.5); if (p.u > 1) { p.u -= 1; p.s = (Math.random() * strands.length) | 0; }
+        const st = strands[p.s]; pos(st, p.u, t, S, P);
+        const depth = 0.55 + 0.45 * P.z, c = st.orange ? ORANGE : WHITE;
+        J.glowAt(ctx, sp(c[0], c[1], c[2], true), P.x, P.y, (5 + p.sz * 5) * depth * (1 + S.level * 0.8), 0.35 + 0.5 * depth);
+      }
+      // Kern
+      const core = Hh * (0.55 + S.level * 0.55 + S.pulse * 0.2 + S.think * 0.1);
+      J.glowAt(ctx, sp(120, 190, 255), cx, cy, core * 2.2, 0.32 + S.level * 0.4);
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(0.42, 1.6); J.glowAt(ctx, sp(180, 220, 255), 0, 0, core * 1.4, 0.35 + S.level * 0.45); ctx.restore();
+      J.glowAt(ctx, sp(255, 255, 255, true), cx, cy, core * 0.35, 0.6 + S.level * 0.4);
+      if (S.think > 0.05) J.glowAt(ctx, sp(255, 150, 60), cx, cy, core * 1.4, S.think * 0.25);
+
+      // Module
+      ctx.globalCompositeOperation = "source-over";
+      const nr = Math.max(14, Math.min(22, h * 0.02));
+      nodes.forEach((n, i) => {
+        const fy = n.y + Math.sin(t * 0.8 + i) * 4;
+        ctx.globalCompositeOperation = "lighter";
+        J.glowAt(ctx, sp(n.col[0], n.col[1], n.col[2]), n.x, fy, nr * (4 + n.act * 3), 0.35 + n.act * 0.6);
+        ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+        ctx.fillStyle = "rgba(4,10,22,0.85)"; ctx.beginPath(); ctx.arc(n.x, fy, nr, 0, TAU); ctx.fill();
+        ctx.strokeStyle = `rgba(${n.col},${0.55 + n.act * 0.45})`; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = `rgba(${n.col},0.35)`; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(n.x, fy, nr + 5, t * 0.6 + i, t * 0.6 + i + 1.7); ctx.stroke();
+        ctx.fillStyle = `rgb(${n.col})`; ctx.font = `600 ${Math.round(nr * 0.62)}px Consolas,monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(n.code, n.x, fy + 1);
+        ctx.font = "600 10px Consolas,monospace"; ctx.fillStyle = `rgba(220,235,255,${0.6 + n.act * 0.4})`;
+        ctx.fillText(String(i + 1).padStart(2, "0") + " · " + n.label, n.x, fy + nr + 16);
+      });
+      // Hinweis-Kästen an den Modulen
+      callouts = callouts.filter(c => (c.t -= dt) > 0);
+      ctx.font = "11px Consolas,monospace"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      callouts.forEach(c => {
+        const n = c.n, a = Math.min(1, c.t * 2, (4.5 - c.t) * 4), bw = Math.min(300, ctx.measureText(c.text).width + 24), bh = 44;
+        const left = n.x > cx, bx = left ? n.x - bw - nr - 14 : n.x + nr + 14, by = n.y - bh / 2;
+        ctx.globalAlpha = a; ctx.fillStyle = "rgba(4,10,24,0.9)"; ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = `rgba(${n.col},0.7)`; ctx.lineWidth = 1; ctx.strokeRect(bx + .5, by + .5, bw - 1, bh - 1);
+        ctx.fillStyle = `rgb(${n.col})`; ctx.fillRect(left ? bx + bw - 3 : bx, by, 3, bh);
+        ctx.font = "600 9.5px Consolas,monospace"; ctx.fillText(String(nodes.indexOf(n) + 1).padStart(2, "0") + " · " + n.label, bx + 10, by + 16);
+        ctx.font = "11px Consolas,monospace"; ctx.fillStyle = "rgba(225,238,255,0.95)"; ctx.fillText(c.text, bx + 10, by + 33, bw - 18);
+      });
+      ctx.globalAlpha = 1;
+
+      // Signal-Kurve unten links
+      sig.push(S.level); sig.shift(); sigM.push(S.mic); sigM.shift();
+      const sc = $("vxSigC");
+      if (sc && sc.width) {
+        const g = sc.getContext("2d"), W = sc.width, Hs = sc.height; g.clearRect(0, 0, W, Hs);
+        g.strokeStyle = "rgba(255,255,255,0.06)"; g.lineWidth = 1; g.beginPath();
+        for (let x = 0; x < W; x += W / 12) { g.moveTo(x, 0); g.lineTo(x, Hs); } g.moveTo(0, Hs / 2); g.lineTo(W, Hs / 2); g.stroke();
+        const line = (arr, col) => { g.strokeStyle = col; g.lineWidth = 2.5; g.beginPath(); arr.forEach((v, i) => { const x = i / (arr.length - 1) * W, y = Hs / 2 - v * (Hs * 0.46) * Math.sin(i * 0.9 + t * 8); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); };
+        line(sigM, "rgba(54,224,138,0.85)"); line(sig, "rgba(79,182,255,0.95)");
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>

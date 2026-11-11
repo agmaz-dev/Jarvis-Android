@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JARVIS · Aura</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/core/core.css">
+<style>
+  /* Oberfläche 4 von 7 · AURA */
+  :root{--ac:#c77dff;--ac-rgb:199,125,255;--bg:#07060d;--glass:rgba(16,12,28,.6)}
+  #au-cap{position:fixed;left:50%;top:70px;transform:translateX(-50%);z-index:5;text-align:center;pointer-events:none}
+  #au-cap h1{margin:0;font-size:12px;letter-spacing:.42em;font-weight:500;color:rgba(255,255,255,.85);padding-left:.42em}
+  #au-cap p{margin:6px 0 0;font-size:11px;color:var(--mut);letter-spacing:.2em;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div id="au-cap"><h1 id="auName">JARVIS</h1><p id="auState">bereit</p></div>
+<script src="/core/backend.js"></script>
+<script src="/core/core.js"></script>
+<script>
+(function () {
+  const J = window.Jarvis, $ = id => document.getElementById(id), TAU = Math.PI * 2;
+  let cx = 0, cy = 0, R = 200, stars = [], rot = 0;
+  const LOOPS = [
+    { col: [255, 60, 160], f: [2, 3, 5], ph: [0, 1.1, 2.0], sp: 0.35 },
+    { col: [140, 90, 255], f: [3, 2, 4], ph: [0.8, 0, 1.3], sp: 0.28 },
+    { col: [255, 140, 60], f: [1, 4, 3], ph: [2.1, 0.4, 0.2], sp: 0.4 },
+    { col: [70, 170, 255], f: [4, 3, 2], ph: [1.4, 2.4, 0.9], sp: 0.22 }
+  ];
+  J.registerTheme({
+    id: "aura",
+    init(J) {
+      const nm = (J.settings.name || "Jarvis").toUpperCase(); $("auName").textContent = nm; document.title = nm + " · Aura";
+      for (let i = 0; i < 160; i++) stars.push({ x: Math.random(), y: Math.random(), s: Math.random(), p: Math.random() * TAU });
+      J.on("state", s => { $("auState").textContent = { idle: "bereit", listening: "hört zu", thinking: "denkt nach", speaking: "spricht" }[s]; });
+    },
+    resize(w, h) { cx = w / 2; cy = h * 0.48; R = Math.min(w * 0.3, h * 0.29); },
+    draw(ctx, w, h, S) {
+      const t = S.t, dt = S.dt, sp = J.sprite;
+      rot += dt * (0.25 + S.think * 1.4 + S.speak * 0.35);
+      ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+      ctx.fillStyle = "#07060d"; ctx.fillRect(0, 0, w, h);
+      const hal = ctx.createRadialGradient(cx, cy, R * 0.8, cx, cy, R * 2.4);
+      hal.addColorStop(0, `rgba(150,90,255,${0.14 + S.level * 0.1})`); hal.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = hal; ctx.fillRect(0, 0, w, h);
+      for (const s of stars) { ctx.globalAlpha = 0.25 + 0.35 * Math.sin(t * (0.5 + s.s) + s.p); ctx.fillStyle = "#fff"; ctx.fillRect(s.x * w, s.y * h, 1 + s.s, 1 + s.s); }
+      ctx.globalAlpha = 1;
+      const br = R * (1 + S.level * 0.025 + S.mic * 0.04 + S.pulse * 0.02);
+      // Glaskugel Körper
+      const body = ctx.createRadialGradient(cx - br * 0.25, cy - br * 0.3, br * 0.1, cx, cy, br);
+      body.addColorStop(0, "rgba(70,50,120,0.55)"); body.addColorStop(0.6, "rgba(40,24,80,0.75)"); body.addColorStop(0.92, "rgba(120,90,200,0.55)"); body.addColorStop(1, "rgba(230,210,255,0.9)");
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(cx, cy, br, 0, TAU); ctx.fill();
+      const bot = ctx.createRadialGradient(cx, cy + br * 0.95, 0, cx, cy + br * 0.6, br * 0.9);
+      bot.addColorStop(0, "rgba(255,240,255,0.85)"); bot.addColorStop(0.4, "rgba(210,180,255,0.35)"); bot.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, br, 0, TAU); ctx.clip();
+      ctx.fillStyle = bot; ctx.fillRect(cx - br, cy, br * 2, br);
+      // Neon-Schleifen
+      ctx.globalCompositeOperation = "lighter";
+      const amp = 0.52 + S.level * 0.32 - S.listen * 0.06 + S.think * 0.05;
+      LOOPS.forEach((L, li) => {
+        const pts = [];
+        for (let i = 0; i <= 260; i++) {
+          const u = i / 260 * TAU;
+          const x = Math.sin(L.f[0] * u + L.ph[0] + t * L.sp), y = Math.sin(L.f[1] * u + L.ph[1] + t * L.sp * 1.3), z = Math.sin(L.f[2] * u + L.ph[2] + t * L.sp * 0.7);
+          const x1 = x * Math.cos(rot + li) - z * Math.sin(rot + li), z1 = x * Math.sin(rot + li) + z * Math.cos(rot + li);
+          const k = 2.8 / (2.8 + z1 * 0.6);
+          pts.push(cx + x1 * br * amp * k, cy + y * br * amp * 0.9 * k);
+        }
+        const path = () => { ctx.beginPath(); for (let i = 0; i < pts.length; i += 2) i ? ctx.lineTo(pts[i], pts[i + 1]) : ctx.moveTo(pts[i], pts[i + 1]); };
+        const c = L.col.join(","), boost = 1 + S.level * 0.8;
+        ctx.globalAlpha = 1;
+        path(); ctx.strokeStyle = `rgba(${c},${0.07 * boost})`; ctx.lineWidth = 18; ctx.stroke();
+        path(); ctx.strokeStyle = `rgba(${c},${0.22 * boost})`; ctx.lineWidth = 6; ctx.stroke();
+        path(); ctx.strokeStyle = `rgba(255,255,255,${0.35 + S.level * 0.4})`; ctx.lineWidth = 1.4; ctx.stroke();
+      });
+      const core = br * (0.22 + S.level * 0.25 + S.pulse * 0.08);
+      J.glowAt(ctx, sp(255, 150, 220), cx, cy, core * 3, 0.55 + S.level * 0.3);
+      J.glowAt(ctx, sp(255, 255, 255, true), cx, cy, core * 0.9, 0.9);
+      ctx.restore();
+      // Rand und Glanz
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = `rgba(255,255,255,${0.35 + S.listen * 0.25 + S.mic * 0.3})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, br, 0, TAU); ctx.stroke();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(200,150,255,${0.18 + S.mic * 0.3})`; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(cx, cy, br + 4, 0, TAU); ctx.stroke();
+      ctx.globalCompositeOperation = "source-over";
+      const hl = ctx.createRadialGradient(cx - br * 0.38, cy - br * 0.52, 0, cx - br * 0.38, cy - br * 0.52, br * 0.55);
+      hl.addColorStop(0, "rgba(255,255,255,0.42)"); hl.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = hl; ctx.beginPath(); ctx.ellipse(cx - br * 0.38, cy - br * 0.52, br * 0.5, br * 0.3, -0.6, 0, TAU); ctx.fill();
+      // Spiegelung am Boden
+      ctx.save(); ctx.translate(cx, cy + br * 1.18); ctx.scale(1, 0.12);
+      const sh = ctx.createRadialGradient(0, 0, 0, 0, 0, br); sh.addColorStop(0, `rgba(190,130,255,${0.3 + S.level * 0.2})`); sh.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = sh; ctx.beginPath(); ctx.arc(0, 0, br, 0, TAU); ctx.fill(); ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+  });
+})();
+</script>
+</body>
+</html>
