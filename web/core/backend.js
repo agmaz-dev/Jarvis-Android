@@ -263,7 +263,51 @@
       return { ok: false, models: [], fehler: `Nicht erreichbar: ${base} (${e.name || "Fehler"})` };
     }
   }
-  const MODEL_FN = { ollama: ollamaModels, claude: claudeModels, openai: openaiModels };
+  /* ---- Eigene KI auf dem Handy (Gemma über llama.cpp in der App) */
+  function llmStatus() {
+    if (!(NATIVE && NATIVE.llmStatus)) return null;
+    try { return JSON.parse(NATIVE.llmStatus()); } catch (e) { return null; }
+  }
+  async function handyModels() {
+    const st = llmStatus();
+    if (!st) return { ok: false, models: [], fehler: "Die eigene KI gibt es nur in der Android-App." };
+    if (st.error) return { ok: false, models: [], fehler: st.error };
+    const inst = (st.models || []).filter(m => m.installed).map(m => m.id);
+    if (!inst.length) {
+      const dl = (st.models || []).find(m => m.downloading);
+      return { ok: false, models: [], fehler: dl ? `${dl.name} wird gerade heruntergeladen (${dl.total > 0 ? Math.round(100 * dl.done / dl.total) : 0} %).` : "Noch kein Modell heruntergeladen: Einstellungen → KI & Modelle → Eigene KI." };
+    }
+    return { ok: true, models: inst };
+  }
+  const LLM = { h: null };
+  window.__jvNative.llm = function (type, val) {
+    if (type === "dl") { try { window.dispatchEvent(new CustomEvent("jv-llm-dl", { detail: val || "" })); } catch (e) { } return; }
+    if (LLM.h) LLM.h(type, val);
+  };
+  async function* streamHandy(model, system, msgs, signal, onStatus) {
+    if (!(NATIVE && NATIVE.llmGenerate)) throw new KIError("Die eigene KI gibt es nur in der Android-App.");
+    const queue = []; let wake = null, done = false, err = "";
+    const poke = () => { if (wake) { const w = wake; wake = null; w(); } };
+    LLM.h = (type, val) => {
+      if (type === "tok") queue.push(val);
+      else if (type === "status") { if (onStatus) onStatus(val); }
+      else if (type === "done") { done = true; err = val || ""; }
+      poke();
+    };
+    const ab = () => { try { NATIVE.llmStop(); } catch (e) { } poke(); };
+    if (signal) signal.addEventListener("abort", ab);
+    NATIVE.llmGenerate(JSON.stringify({ model, messages: [{ role: "system", content: system }].concat(msgs), max: 700, temp: 0.8 }));
+    try {
+      for (; ;) {
+        while (queue.length) yield queue.shift();
+        if (done) break;
+        if (signal && signal.aborted) throw new DOMException("Abgebrochen", "AbortError");
+        await new Promise(r => { wake = r; });
+      }
+    } finally { LLM.h = null; if (signal) signal.removeEventListener("abort", ab); }
+    if (err) throw new KIError(err);
+  }
+  const MODEL_FN = { ollama: ollamaModels, claude: claudeModels, openai: openaiModels, handy: handyModels };
   async function allModels(s) {
     const out = {};
     await Promise.all(Object.entries(MODEL_FN).map(async ([k, fn]) => { out[k] = await fn(s); }));
@@ -582,6 +626,7 @@
 
   /* ------------------------------------------------------------ Datenschutz */
   function istCloud(s, anbieter) {
+    if (anbieter === "handy") return false;
     if (anbieter === "claude") return true;
     if (anbieter === "openai") return !isLocalUrl(s.openai_url);
     return !isLocalUrl(s.ollama_url);
@@ -623,6 +668,13 @@
     }
     return found.filter((f, i) => found.indexOf(f) === i);
   }
+  // Lokale KI für private Nachrichten: zuerst die eigene KI im Handy, sonst Ollama auf dem Gerät
+  async function lokaleKI(s) {
+    const hm = await handyModels();
+    if (hm.ok) { const pref = s.anbieter === "handy" && hm.models.includes(s.modell) ? s.modell : hm.models[0]; return ["handy", pref]; }
+    const om = await lokalesModell(s);
+    return om ? ["ollama", om] : null;
+  }
   async function lokalesModell(s) {
     if (!isLocalUrl(s.ollama_url)) return "";      // Ollama Cloud zählt nicht als lokal
     const om = await ollamaModels(s);
@@ -636,7 +688,11 @@
   const LAENGE = { kurz: "Antworte in der Regel in 1 bis 3 kurzen Sätzen.", normal: "Antworte in der Regel in 2 bis 5 Sätzen.", ausfuehrlich: "Antworte gründlich, aber gut vorlesbar." };
   const TAGE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
   const MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
-  function systemPrompt(s, ctx, websuche, mitGedaechtnis) {
+  function zeitSatz() {
+    const now = new Date(), hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+    return `Heute ist ${TAGE[(now.getDay() + 6) % 7]}, der ${now.getDate()}. ${MONATE[now.getMonth()]} ${now.getFullYear()}, es ist ${hhmm} Uhr.`;
+  }
+  function systemPrompt(s, ctx, websuche, mitGedaechtnis, kompakt) {
     const now = new Date(), name = s.name || "Jarvis";
     const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
     const p = [`Du bist ${name}, ein persönlicher KI-Assistent im Stil von J.A.R.V.I.S.: ruhig, schlagfertig, hilfsbereit, mit einem ` +
@@ -644,7 +700,7 @@
     "Deine Antworten werden laut vorgelesen: kurze, natürliche Sätze. Kein Markdown, keine Sternchen, keine Aufzählungszeichen, " +
     "keine Emojis, keine Links ausschreiben. " + (LAENGE[s.antwortlaenge] || LAENGE.kurz),
       "Erfinde nichts. Wenn du etwas nicht weißt oder nicht nachsehen kannst, sag das ehrlich.",
-    `Heute ist ${TAGE[(now.getDay() + 6) % 7]}, der ${now.getDate()}. ${MONATE[now.getMonth()]} ${now.getFullYear()}, es ist ${hhmm} Uhr.`];
+    kompakt ? "" : zeitSatz()].filter(Boolean);
     if (s.nutzer) p.push(`Dein Nutzer heißt ${s.nutzer}. Sprich ihn ab und zu mit Namen an.`);
     if (s.persona) p.push("Zusätzliche Anweisungen deines Nutzers zu deiner Persönlichkeit: " + s.persona);
     p.push("Fähigkeiten, die die Oberfläche selbst ausführt (der Nutzer muss es nur sagen): Timer und Erinnerungen, Webseiten " +
@@ -656,7 +712,7 @@
       "und unten noch keine INTERNETSUCHE steht, antworte NUR mit genau einer Zeile: [suche: kurze Suchanfrage]. Sonst nie.");
     else if (websuche === "done") p.push("Unten stehen frische Ergebnisse einer Internetsuche. Verlass dich darauf statt auf dein älteres Wissen. Keine weitere Suche.");
     else p.push("Du hast keinen Internetzugang. Für aktuelle Ereignisse sag ehrlich, dass dein Wissen einen Stand hat.");
-    if (mitGedaechtnis) p.push("GEDÄCHTNIS (was du dir über deinen Nutzer gemerkt hast):\n" + (memText() || "(noch leer)"));
+    if (mitGedaechtnis) p.push("GEDÄCHTNIS (was du dir über deinen Nutzer gemerkt hast):\n" + (memText(kompakt ? 1500 : 4000) || "(noch leer)"));
     else p.push("GEDÄCHTNIS: Aus Datenschutzgründen bleibt das Gedächtnis auf dem Gerät des Nutzers und wird dir nicht geschickt. " +
       "Fragt er danach oder nach 'heute steht an', sag kurz, dass die Notizen nur bei der lokalen KI verfügbar sind.");
     if (s.auto_merken && mitGedaechtnis) p.push("Wenn der Nutzer dir etwas Dauerhaftes über sich erzählt (Name, Vorlieben, Projekte, Termine, Ziele), das noch " +
@@ -823,20 +879,21 @@
     }
 
     if (s.strikt_lokal && istCloud(s, anbieter)) {
-      anbieter = "ollama"; model = await lokalesModell(s);
-      if (!model) return emit({ t: "error", message: "Strikt lokal ist an, aber Ollama läuft nicht auf dem Gerät oder hat kein Modell. Es wurde nichts gesendet." });
+      const lk = await lokaleKI(s);
+      if (!lk) return emit({ t: "error", message: "Strikt lokal ist an, aber es gibt keine lokale KI (eigene KI im Handy oder Ollama). Es wurde nichts gesendet." });
+      [anbieter, model] = lk;
     }
     let privatErkannt = privatErkennen(text, s).length > 0;
     if (istCloud(s, anbieter) && s.privat_weiche && !payload.erzwingen_cloud) {
       const gruende = privatErkennen(text, s);
       if (gruende.length) {
-        const lm = await lokalesModell(s);
-        if (!lm) return emit({
+        const lk = await lokaleKI(s);
+        if (!lk) return emit({
           t: "privat", weiter: "blockiert", gruende,
-          message: "Private Daten erkannt (" + gruende.join(", ") + "). Eine lokale KI (Ollama auf dem Gerät) ist nicht erreichbar, deshalb habe ich nichts an die Cloud geschickt."
+          message: "Private Daten erkannt (" + gruende.join(", ") + "). Es gibt keine lokale KI (eigene KI im Handy oder Ollama), deshalb habe ich nichts an die Cloud geschickt."
         });
-        anbieter = "ollama"; model = lm;
-        emit({ t: "privat", weiter: "lokal", gruende, modell: lm });
+        [anbieter, model] = lk;
+        emit({ t: "privat", weiter: "lokal", gruende, modell: model });
       }
     }
     const cloud = istCloud(s, anbieter);
@@ -863,7 +920,8 @@
       const hint = {
         ollama: "Kein Ollama-Modell gefunden. Läuft Ollama und ist ein Modell installiert? (ollama pull llama3.2) Oder in den Einstellungen Ollama Cloud eintragen.",
         claude: "Kein Claude-Modell verfügbar. Ist der Schlüssel in den Einstellungen eingetragen?",
-        openai: "Kein Modell verfügbar. Sind Basis-Adresse und Schlüssel in den Einstellungen eingetragen?"
+        openai: "Kein Modell verfügbar. Sind Basis-Adresse und Schlüssel in den Einstellungen eingetragen?",
+        handy: "Die eigene KI ist noch nicht heruntergeladen: Einstellungen → KI & Modelle → Eigene KI."
       }[anbieter];
       return emit({ t: "error", message: hint });
     }
@@ -880,8 +938,18 @@
     }
     const tf = new TagFilter(), full = [];
     async function generate(modus) {
-      const system = systemPrompt(s, ctx, modus, memOk);
-      const gen = anbieter === "ollama" ? streamOllama(s, model, system, msgs, signal)
+      let gen;
+      if (anbieter === "handy") {
+        // Fester Systemtext (wird im Handy zwischengespeichert = schneller), wechselnde Infos in die letzte Nachricht
+        const system = systemPrompt(s, [], modus, memOk, true);
+        const dyn = [zeitSatz()].concat(ctx.map(c => c.slice(0, 5000))).join("\n\n");
+        const m2 = msgs.slice(-8).map(m => Object.assign({}, m));
+        while (m2.length && m2[0].role !== "user") m2.shift();
+        if (m2.length) m2[m2.length - 1].content = "[Aktuelle Infos für dich, nicht vorlesen]\n" + dyn + "\n\n[Nachricht]\n" + m2[m2.length - 1].content;
+        gen = streamHandy(model, system, m2, signal, st => { if (st === "loading") emit({ t: "action", typ: "status", text: "Eigene KI wird geladen … (das dauert beim ersten Mal etwas)" }); });
+      }
+      const system = gen ? "" : systemPrompt(s, ctx, modus, memOk);
+      if (!gen) gen = anbieter === "ollama" ? streamOllama(s, model, system, msgs, signal)
         : anbieter === "claude" ? streamClaude(s, model, system, msgs, e => emit(Object.assign({ t: "action" }, e)), signal)
           : streamOpenai(s, model, system, msgs, signal);
       for await (const chunk of gen) {

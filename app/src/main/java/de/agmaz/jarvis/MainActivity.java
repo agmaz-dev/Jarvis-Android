@@ -68,6 +68,8 @@ public class MainActivity extends Activity {
     static final String BROWSER_UA = "Mozilla/5.0 (Linux; Android 15; SM-F966B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService pool = Executors.newCachedThreadPool();
+    private final ExecutorService llmExec = Executors.newSingleThreadExecutor();
+    private Llm llm;
     private final Map<Integer, HttpURLConnection> conns = new ConcurrentHashMap<>();
     private final Set<Integer> aborted = ConcurrentHashMap.newKeySet();
 
@@ -129,6 +131,7 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+        try { llm = new Llm(this); } catch (Throwable t) { llm = null; }
         web.addJavascriptInterface(new Bridge(), "JarvisNative");
         android.webkit.CookieManager.getInstance().setAcceptCookie(true);
 
@@ -562,6 +565,52 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void googleSetup() { main.post(MainActivity.this::googleSetup); }
 
+        // ---------------- Eigene KI auf dem Handy
+        @JavascriptInterface
+        public String llmStatus() { return llm == null ? "{\"error\":\"KI-Modul fehlt\"}" : llm.status(); }
+
+        @JavascriptInterface
+        public void llmDownload(final String id) {
+            if (llm == null) return;
+            pool.execute(() -> {
+                String err = llm.download(id);
+                js("llm", "dl", err == null ? "" : err);
+                if (err == null) toast("Download gestartet – den Fortschritt siehst du auch in der Benachrichtigung.");
+            });
+        }
+
+        @JavascriptInterface
+        public void llmDelete(final String id) { if (llm != null) llmExec.execute(() -> llm.delete(id)); }
+
+        @JavascriptInterface
+        public void llmStop() { Llm.nativeStop(); }
+
+        @JavascriptInterface
+        public void llmGenerate(final String req) {
+            if (llm == null) { js("llm", "done", "KI-Modul fehlt in dieser App-Version."); return; }
+            llmExec.execute(() -> {
+                try {
+                    JSONObject r = new JSONObject(req);
+                    String id = r.getString("model");
+                    if (!id.equals(llm.loaded)) js("llm", "status", "loading");
+                    String err = llm.ensureLoaded(id);
+                    if (err != null) { js("llm", "done", err); return; }
+                    js("llm", "status", "ready");
+                    JSONArray ms = r.getJSONArray("messages");
+                    String[] roles = new String[ms.length()], contents = new String[ms.length()];
+                    for (int i = 0; i < ms.length(); i++) {
+                        roles[i] = ms.getJSONObject(i).getString("role");
+                        contents[i] = ms.getJSONObject(i).getString("content");
+                    }
+                    String res = Llm.nativeGenerate(roles, contents, r.optInt("max", 700), (float) r.optDouble("temp", 0.8),
+                            bytes -> js("llm", "tok", new String(bytes, StandardCharsets.UTF_8)));
+                    js("llm", "done", res == null ? "" : res);
+                } catch (Throwable t) {
+                    js("llm", "done", "Fehler der eigenen KI: " + t.getMessage());
+                }
+            });
+        }
+
         @JavascriptInterface
         public void srStart(final String lang) { main.post(() -> MainActivity.this.srStart(lang)); }
 
@@ -630,6 +679,15 @@ public class MainActivity extends Activity {
         if (gSetup != null) closeGoogleSetup();
         else if (web != null && web.canGoBack()) web.goBack();
         else super.onBackPressed();
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        // Android braucht dringend Speicher und Jarvis ist im Hintergrund: Modell freigeben (wird bei Bedarf neu geladen)
+        if (level >= TRIM_MEMORY_COMPLETE && llm != null && llm.loaded != null) {
+            llmExec.execute(() -> { Llm.nativeUnload(); llm.loaded = null; });
+        }
     }
 
     @Override

@@ -245,6 +245,7 @@
         break;
       }
       case "routine": ev("routine", "Routine: " + a.satz); break;
+      case "status": ev("ki", a.text); toast(a.text, false, 6000); break;
     }
   }
 
@@ -506,13 +507,14 @@
   }
 
   /* =============================================================== Modellwahl oben rechts */
-  const PROV = { ollama: "Lokal · Ollama", claude: "Claude · API", openai: "OpenAI-kompatibel · API" };
+  const PROV = { handy: "Eigene KI · im Handy", ollama: "Lokal · Ollama", claude: "Claude · API", openai: "OpenAI-kompatibel · API" };
+  const HAS_LLM = !!(window.JarvisNative && window.JarvisNative.llmStatus);
   async function loadModels() {
     const sel = $("jv-msel"), box = $("jv-model");
     try {
       const r = await api("/api/models"); J.models = r;
       let h = "";
-      for (const p of ["ollama", "claude", "openai"]) {
+      for (const p of (HAS_LLM ? ["handy", "ollama", "claude", "openai"] : ["ollama", "claude", "openai"])) {
         const L = r.liste[p] || { ok: false, models: [] };
         h += `<optgroup label="${PROV[p]}">`;
         const lock = J.settings && J.settings.strikt_lokal && isCloud(p);
@@ -537,6 +539,7 @@
   /* =============================================================== Datenschutz-Anzeige */
   function isCloud(p, st) {
     st = st || J.settings || {};
+    if (p === "handy") return false;
     if (p === "claude") return true;
     if (p === "openai") { const u = (st.openai_url || "").toLowerCase(); return !(u.includes("localhost") || u.includes("127.0.0.1")); }
     const o = (st.ollama_url || "").toLowerCase(); return !/^(https?:\/\/)?(localhost|127\.|10\.|192\.168\.|\[::1\])/.test(o);
@@ -561,6 +564,7 @@
   function privList(st) {
     const cloud = isCloud(st.anbieter) && !st.strikt_lokal, prov = st.anbieter === "claude" ? "Anthropic (Claude)" : st.anbieter === "ollama" ? "Ollama Cloud" : "deinen API-Anbieter";
     const L = [];
+    if (st.anbieter === "handy") L.push(["KI-Anfragen", "bleiben auf dem Handy (eigene KI)", false]); else
     L.push(["KI-Anfragen", cloud ? "gehen an " + prov + ": deine Nachricht und die letzten Nachrichten, private ausgenommen" : "bleiben auf deinem PC (Ollama)", cloud]);
     L.push(["Gedächtnis", cloud && st.gedaechtnis_cloud ? "wird bei jeder Anfrage an " + prov + " mitgeschickt" : "bleibt auf deinem PC", cloud && st.gedaechtnis_cloud]);
     if (cloud) L.push(["Private Nachrichten", st.privat_weiche ? "werden erkannt und lokal von Ollama beantwortet. Läuft Ollama nicht, wird nichts gesendet." : "gehen ebenfalls in die Cloud", !st.privat_weiche]);
@@ -641,9 +645,11 @@
 <div class="body"><nav>${nav}</nav><div class="tabs">
 <section class="tab on" data-tab="ki"><h3>Welche KI soll antworten?</h3><p class="hint">Wähle einen Anbieter. Ollama läuft entweder direkt auf dem Handy (Termux, kostenlos, offline) oder als Ollama Cloud mit Schlüssel. Claude und OpenAI-kompatible Dienste brauchen einen API-Schlüssel und Internet. Das Modell kannst du jederzeit oben rechts wechseln.</p>
 <div class="seg" style="margin-bottom:16px">
+${HAS_LLM ? '<label><input type="radio" name="anb" value="handy" data-k="anbieter"><span><b>Eigene KI · Handy</b><small>Gemma, offline, gehört dir</small></span></label>' : ""}
 <label><input type="radio" name="anb" value="ollama" data-k="anbieter"><span><b>Lokal · Ollama</b><small>Kostenlos, offline, ohne Schlüssel</small></span></label>
 <label><input type="radio" name="anb" value="claude" data-k="anbieter"><span><b>Claude · API</b><small>Anthropic, mit Websuche</small></span></label>
 <label><input type="radio" name="anb" value="openai" data-k="anbieter"><span><b>OpenAI-kompatibel</b><small>OpenAI, Groq, OpenRouter, LM Studio …</small></span></label></div>
+${HAS_LLM ? '<div class="box" data-box="handy"><h4>Eigene KI · im Handy</h4><p class="hint" style="margin:0 0 10px">Die KI läuft komplett auf deinem Handy: ohne Internet, ohne Konto, ohne Kosten. Einmal herunterladen (am besten im WLAN), dann oben „Eigene KI · Handy“ wählen. Private Nachrichten beantwortet sie automatisch, auch wenn sonst eine Cloud-KI aktiv ist.</p><div id="jv-llm">lädt …</div></div>' : ""}
 <div class="box" data-box="ollama"><h4>Ollama (lokal oder Cloud)</h4><div class="row"><label>Adresse<small>Auf dem Gerät: http://localhost:11434<br>Ollama Cloud: https://ollama.com</small></label><input type="url" data-k="ollama_url"></div>
 <div class="row"><label>API-Schlüssel<small>nur für Ollama Cloud, sonst leer</small></label><input type="password" data-k="ollama_key" placeholder="leer lassen bei lokal" autocomplete="off"></div>
 <div class="row"><label></label><div class="inl"><span class="res" data-res="ollama"></span><button class="jv-btn" data-test="ollama">Verbindung testen</button></div></div></div>
@@ -799,6 +805,32 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
     out.routinen = readRoutines();
     return out;
   }
+  let llmT = 0;
+  function renderLlm() {
+    clearTimeout(llmT);
+    const box = $("jv-llm"); if (!box || !$("jv-set").classList.contains("on")) return;
+    let st; try { st = JSON.parse(window.JarvisNative.llmStatus()); } catch (e) { box.textContent = "Status nicht lesbar."; return; }
+    if (st.error) { box.textContent = st.error; return; }
+    const gb = b => (b / 1e9).toFixed(1).replace(".", ",");
+    box.innerHTML = (st.models || []).map(m => {
+      let right;
+      if (m.installed) right = `<span class="res ok">✓ installiert${st.loaded === m.id ? " · geladen" : ""}</span><button class="jv-btn" data-llmdel="${m.id}">Löschen</button>`;
+      else if (m.downloading) right = `<span class="res">${m.paused ? "pausiert (wartet auf Netz)" : "lädt"} ${m.total > 0 ? Math.floor(100 * m.done / m.total) + " % · " + gb(m.done) + " / " + gb(m.total) + " GB" : "…"}</span><button class="jv-btn" data-llmdel="${m.id}">Abbrechen</button>`;
+      else right = `${m.failed ? '<span class="res bad">Download fehlgeschlagen</span>' : ""}<button class="jv-btn" data-llmdl="${m.id}">Herunterladen (${String(m.gb).replace(".", ",")} GB)</button>`;
+      return `<div class="row"><label>${esc(m.name)}<small>${esc(m.info)}</small></label><div class="inl">${right}</div></div>`;
+    }).join("") + `<p class="hint" style="margin:6px 0 0">Freier Speicher: ${String(Math.round(st.free_gb || 0))} GB</p>`;
+    box.querySelectorAll("[data-llmdl]").forEach(b => b.onclick = () => { b.disabled = true; b.textContent = "startet …"; window.JarvisNative.llmDownload(b.dataset.llmdl); setTimeout(renderLlm, 1500); });
+    box.querySelectorAll("[data-llmdel]").forEach(b => b.onclick = () => {
+      if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "Wirklich?"; return; }
+      window.JarvisNative.llmDelete(b.dataset.llmdel); setTimeout(() => { renderLlm(); loadModels(); }, 800);
+    });
+    const busy = (st.models || []).some(m => m.downloading);
+    if (busy) llmT = setTimeout(renderLlm, 2000);
+    else if (box.dataset.wasBusy) { delete box.dataset.wasBusy; loadModels(); }
+    if (busy) box.dataset.wasBusy = 1;
+  }
+  addEventListener("jv-llm-dl", e => { if (e.detail) toast(e.detail, true, 7000); renderLlm(); });
+
   function openSettings(tab) {
     const box = $("jv-set");
     box.innerHTML = settingsHtml();
@@ -806,6 +838,7 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
     const upd = () => { const pl = $("jv-privlist"); if (pl) pl.innerHTML = privList(Object.assign({}, J.settings, readValues(box))); };
     box.addEventListener("change", upd); upd();
     { const g = $("jv-gsetup"); if (g) g.onclick = () => { try { window.JarvisNative.googleSetup(); } catch (e) { } }; }
+    if (HAS_LLM) renderLlm();
     /* Anbieter antippen: passenden Kasten zeigen (darunter) und hervorheben */
     box.querySelectorAll('input[name="anb"]').forEach(r => r.addEventListener("change", () => {
       box.querySelectorAll("[data-box]").forEach(x => x.style.outline = "");
