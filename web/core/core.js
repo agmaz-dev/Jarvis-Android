@@ -283,7 +283,7 @@
       return t.replace(/```[\s\S]*?```/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/https?:\/\/\S+/g, "")
         .replace(/[*_#`>|~]+/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim();
     }
-    function mode() { const m = (J.settings && J.settings.stimme) || "browser"; return (m === "elevenlabs" && J.settings.strikt_lokal) ? "browser" : m; }
+    function mode() { const m = (J.settings && J.settings.stimme) || "browser"; return (m === "elevenlabs" && (J.settings.strikt_lokal || !J.settings.eleven_key || !J.settings.eleven_voice)) ? "browser" : m; }
     function enqueue(text) {
       const t = clean(text); if (!t || !/[\p{L}\p{N}]/u.test(t)) return;
       spoke = true; const item = { text: t };

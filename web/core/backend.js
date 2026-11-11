@@ -75,6 +75,8 @@
   }
   function updateSettings(data) {
     const s = loadSettings();
+    // Anbieter gewechselt ohne neues Modell: altes Modell passt nicht mehr (z. B. gpt-oss:20b von Ollama bei Groq)
+    if (data && data.anbieter && data.anbieter !== s.anbieter && !("modell" in data)) s.modell = "";
     for (const [k, v0] of Object.entries(data || {})) {
       if (!(k in DEFAULTS)) continue;
       let v = v0;
@@ -273,6 +275,11 @@
     if (m && (lst == null || lst.includes(m))) return [a, m];
     if (lst == null) lst = (await MODEL_FN[a](s)).models || [];
     if (a === "claude") { const pref = lst.filter(x => x.includes("sonnet")); const p = pref.length ? pref : lst; return [a, p[0] || ""]; }
+    if (a === "openai") {   // gute Allround-Modelle bevorzugen statt alphabetisch das erste
+      for (const want of ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "gpt-4o-mini", "gpt-oss", "llama", "qwen"]) {
+        const hit = lst.find(x => x === want) || lst.find(x => x.includes(want)); if (hit) return [a, hit];
+      }
+    }
     return [a, lst[0] || ""];
   }
 
@@ -716,6 +723,10 @@
     if (!msgs.length) return emit({ t: "error", message: "Leere Nachricht." });
     const text = msgs[msgs.length - 1].content, u = text.toLowerCase();
     let [anbieter, model] = await pickModel(s);
+    if (model && anbieter !== "claude") {
+      const lst = (await MODEL_FN[anbieter](s)).models || [];
+      if (lst.length && !lst.includes(model)) { s.modell = ""; [anbieter, model] = await pickModel(s); }
+    }
 
     if (s.strikt_lokal && istCloud(s, anbieter)) {
       anbieter = "ollama"; model = await lokalesModell(s);
