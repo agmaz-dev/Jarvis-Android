@@ -635,6 +635,35 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void llmDelete(final String id) { if (llm != null) llmExec.execute(() -> llm.delete(id)); }
 
+        // ---------------- Aktionen (E-Mail, Telefon, Wecker …), Ergebnis kommt über __jvNative.act(id, json)
+        @JavascriptInterface
+        public void act(final String id, final String name, final String argsJson) {
+            pool.execute(() -> {
+                String r;
+                try {
+                    JSONObject a = new JSONObject(argsJson == null || argsJson.isEmpty() ? "{}" : argsJson);
+                    switch (name) {
+                        case "kontakte": r = Actions.contacts(MainActivity.this, a.optString("name")); break;
+                        case "anrufen": r = Actions.call(MainActivity.this, a.optString("nummer")); break;
+                        case "sms": r = Actions.sms(MainActivity.this, a.optString("nummer"), a.optString("text")); break;
+                        case "whatsapp": r = Actions.whatsapp(MainActivity.this, a.optString("nummer"), a.optString("text")); break;
+                        case "wecker": r = Actions.alarm(MainActivity.this, a.optInt("h"), a.optInt("m"), a.optString("text")); break;
+                        case "timer": r = Actions.timer(MainActivity.this, a.optInt("sek"), a.optString("text")); break;
+                        case "navigation": r = Actions.navigate(MainActivity.this, a.optString("ziel")); break;
+                        case "app": r = Actions.openApp(MainActivity.this, a.optString("name")); break;
+                        case "taschenlampe": r = Actions.torch(MainActivity.this, a.optBoolean("an", true)); break;
+                        case "mail_liste": r = Mail.list(a.optString("user"), a.optString("pass"), a.optInt("anzahl", 5), a.optBoolean("ungelesen", true)); break;
+                        case "mail_lesen": r = Mail.read(a.optString("user"), a.optString("pass"), a.optLong("uid")); break;
+                        case "mail_senden": r = Mail.send(a.optString("user"), a.optString("pass"), a.optString("an"), a.optString("betreff"), a.optString("text"), a.optLong("antwort_uid", 0)); break;
+                        default: r = Actions.fail("Unbekannte Aktion: " + name);
+                    }
+                } catch (Throwable t) {
+                    r = Actions.fail("Fehler: " + t.getMessage());
+                }
+                js("act", id, r);
+            });
+        }
+
         @JavascriptInterface
         public void llmStop() { Llm.nativeStop(); }
 

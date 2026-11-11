@@ -59,8 +59,17 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    packaging {
+        resources {
+            // Die Mail-Bibliothek braucht ihre META-INF/javamail.*-Dateien, nur doppelte Lizenzdateien zusammenführen
+            pickFirsts += listOf("META-INF/LICENSE.md", "META-INF/NOTICE.md", "META-INF/LICENSE", "META-INF/NOTICE")
+        }
+    }
 }
 
 dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("com.sun.mail:android-mail:1.6.7")
+    implementation("com.sun.mail:android-activation:1.6.7")
 }
