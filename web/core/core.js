@@ -531,7 +531,7 @@
     st = st || J.settings || {};
     if (p === "claude") return true;
     if (p === "openai") { const u = (st.openai_url || "").toLowerCase(); return !(u.includes("localhost") || u.includes("127.0.0.1")); }
-    return false;
+    const o = (st.ollama_url || "").toLowerCase(); return !/^(https?:\/\/)?(localhost|127\.|10\.|192\.168\.|\[::1\])/.test(o);
   }
   J.isCloud = isCloud;
   let privT = 0;
@@ -541,7 +541,7 @@
     b.className = "jv-glass " + (st.strikt_lokal ? "strikt" : cloud ? "cloud" : "lokal");
     if (!privT) b.querySelector("span").textContent = st.strikt_lokal ? "STRIKT LOKAL" : cloud ? "CLOUD" : "LOKAL";
     b.title = st.strikt_lokal ? "Strikt lokal: nichts verlässt deinen PC (nur Ollama, keine Online-Dienste)"
-      : cloud ? "Cloud-KI aktiv: Nachrichten gehen an " + (st.anbieter === "claude" ? "Anthropic" : "den API-Anbieter") + "."
+      : cloud ? "Cloud-KI aktiv: Nachrichten gehen an " + (st.anbieter === "claude" ? "Anthropic" : st.anbieter === "ollama" ? "Ollama Cloud" : "den API-Anbieter") + "."
         + (st.gedaechtnis_cloud ? " Das Gedächtnis wird mitgeschickt." : " Das Gedächtnis bleibt lokal.") + (st.privat_weiche ? " Private Nachrichten gehen an Ollama." : "")
         : "Lokale KI: die Anfragen bleiben auf deinem PC.";
   }
@@ -551,7 +551,7 @@
     privT = setTimeout(() => { privT = 0; b.classList.remove("flash"); privBadge(); }, 4500);
   }
   function privList(st) {
-    const cloud = isCloud(st.anbieter) && !st.strikt_lokal, prov = st.anbieter === "claude" ? "Anthropic (Claude)" : "deinen API-Anbieter";
+    const cloud = isCloud(st.anbieter) && !st.strikt_lokal, prov = st.anbieter === "claude" ? "Anthropic (Claude)" : st.anbieter === "ollama" ? "Ollama Cloud" : "deinen API-Anbieter";
     const L = [];
     L.push(["KI-Anfragen", cloud ? "gehen an " + prov + ": deine Nachricht und die letzten Nachrichten, private ausgenommen" : "bleiben auf deinem PC (Ollama)", cloud]);
     L.push(["Gedächtnis", cloud && st.gedaechtnis_cloud ? "wird bei jeder Anfrage an " + prov + " mitgeschickt" : "bleibt auf deinem PC", cloud && st.gedaechtnis_cloud]);
@@ -630,7 +630,7 @@
     const nav = TABS.map((t, i) => `<button data-tab="${t[0]}" class="${i ? "" : "on"}"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${t[2]}"/></svg><span>${t[1]}</span></button>`).join("");
     return `<div class="panel"><header><h2>Einstellungen</h2><span>Änderungen gelten sofort nach „Speichern“</span><button class="jv-btn" data-close>Schließen</button></header>
 <div class="body"><nav>${nav}</nav><div class="tabs">
-<section class="tab on" data-tab="ki"><h3>Welche KI soll antworten?</h3><p class="hint">Wähle einen Anbieter. Lokal mit Ollama ist kostenlos und läuft auf deinem PC. Claude und OpenAI-kompatible Dienste brauchen einen API-Schlüssel und Internet. Das Modell kannst du jederzeit oben rechts wechseln.</p>
+<section class="tab on" data-tab="ki"><h3>Welche KI soll antworten?</h3><p class="hint">Wähle einen Anbieter. Ollama läuft entweder direkt auf dem Handy (Termux, kostenlos, offline) oder als Ollama Cloud mit Schlüssel. Claude und OpenAI-kompatible Dienste brauchen einen API-Schlüssel und Internet. Das Modell kannst du jederzeit oben rechts wechseln.</p>
 <div class="seg" style="margin-bottom:16px">
 <label><input type="radio" name="anb" value="ollama" data-k="anbieter"><span><b>Lokal · Ollama</b><small>Kostenlos, offline, ohne Schlüssel</small></span></label>
 <label><input type="radio" name="anb" value="claude" data-k="anbieter"><span><b>Claude · API</b><small>Anthropic, mit Websuche</small></span></label>
