@@ -179,16 +179,26 @@ public class Actions {
     }
 
     // ---------------------------------------------------------------- Kalender
-    private static long calendarId(Activity a) {
+    /** Bester Kalender: sichtbar, synchronisiert, beschreibbar; bevorzugt das Haupt-Google-Konto. Liefert {id, Name}. */
+    private static String[] calendarPick(Activity a) {
         String[] proj = {android.provider.CalendarContract.Calendars._ID, android.provider.CalendarContract.Calendars.IS_PRIMARY,
-                android.provider.CalendarContract.Calendars.ACCOUNT_TYPE, android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL};
-        long best = -1; int bestScore = -1;
+                android.provider.CalendarContract.Calendars.ACCOUNT_TYPE, android.provider.CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+                android.provider.CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, android.provider.CalendarContract.Calendars.ACCOUNT_NAME,
+                android.provider.CalendarContract.Calendars.SYNC_EVENTS, android.provider.CalendarContract.Calendars.OWNER_ACCOUNT};
+        String[] best = null; int bestScore = -1;
         try (Cursor c = a.getContentResolver().query(android.provider.CalendarContract.Calendars.CONTENT_URI, proj,
                 android.provider.CalendarContract.Calendars.VISIBLE + "=1", null, null)) {
             while (c != null && c.moveToNext()) {
                 if (c.getInt(3) < android.provider.CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) continue;
-                int sc = (c.getInt(1) == 1 ? 2 : 0) + ("com.google".equals(c.getString(2)) ? 1 : 0);
-                if (sc > bestScore) { bestScore = sc; best = c.getLong(0); }
+                String type = c.getString(2) == null ? "" : c.getString(2);
+                String accName = c.getString(5) == null ? "" : c.getString(5), owner = c.getString(7) == null ? "" : c.getString(7);
+                int sc = 0;
+                if ("com.google".equals(type)) sc += 4;
+                if (c.getInt(1) == 1) sc += 2;
+                if (!accName.isEmpty() && accName.equalsIgnoreCase(owner)) sc += 2;   // Hauptkalender des Kontos
+                if (c.getInt(6) == 1) sc += 1;
+                if ("LOCAL".equals(type)) sc -= 1;
+                if (sc > bestScore) { bestScore = sc; best = new String[]{String.valueOf(c.getLong(0)), c.getString(4) + (accName.isEmpty() ? "" : " (" + accName + ")")}; }
             }
         }
         return best;
@@ -199,19 +209,38 @@ public class Actions {
             a.runOnUiThread(() -> a.requestPermissions(new String[]{Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR}, 22));
             return fail("Ich brauche die Berechtigung für deinen Kalender. Bitte erlauben und den Befehl noch einmal sagen.");
         }
-        long cal = calendarId(a);
-        if (cal < 0) return fail("Kein beschreibbarer Kalender gefunden.");
+        String[] cal = calendarPick(a);
+        if (cal == null) return fail("Kein beschreibbarer Kalender gefunden.");
         android.content.ContentValues v = new android.content.ContentValues();
-        v.put(android.provider.CalendarContract.Events.CALENDAR_ID, cal);
+        v.put(android.provider.CalendarContract.Events.CALENDAR_ID, Long.parseLong(cal[0]));
         v.put(android.provider.CalendarContract.Events.TITLE, title);
         if (where != null && !where.isEmpty()) v.put(android.provider.CalendarContract.Events.EVENT_LOCATION, where);
         v.put(android.provider.CalendarContract.Events.DTSTART, start);
         v.put(android.provider.CalendarContract.Events.DTEND, end);
         v.put(android.provider.CalendarContract.Events.ALL_DAY, allDay ? 1 : 0);
         v.put(android.provider.CalendarContract.Events.EVENT_TIMEZONE, allDay ? "UTC" : java.util.TimeZone.getDefault().getID());
+        v.put(android.provider.CalendarContract.Events.HAS_ALARM, 1);
         try {
-            a.getContentResolver().insert(android.provider.CalendarContract.Events.CONTENT_URI, v);
-            return ok("Termin eingetragen.");
+            android.net.Uri u = a.getContentResolver().insert(android.provider.CalendarContract.Events.CONTENT_URI, v);
+            if (u == null) return fail("Der Kalender hat den Termin nicht angenommen.");
+            long evId = android.content.ContentUris.parseId(u);
+            // 30 Minuten vorher erinnern
+            if (!allDay) {
+                android.content.ContentValues r = new android.content.ContentValues();
+                r.put(android.provider.CalendarContract.Reminders.EVENT_ID, evId);
+                r.put(android.provider.CalendarContract.Reminders.MINUTES, 30);
+                r.put(android.provider.CalendarContract.Reminders.METHOD, android.provider.CalendarContract.Reminders.METHOD_ALERT);
+                try { a.getContentResolver().insert(android.provider.CalendarContract.Reminders.CONTENT_URI, r); } catch (Exception ignored) { }
+            }
+            // Gegenprobe: steht der Termin jetzt wirklich drin?
+            boolean found = false;
+            try (Cursor c = a.getContentResolver().query(android.provider.CalendarContract.Events.CONTENT_URI,
+                    new String[]{android.provider.CalendarContract.Events._ID}, android.provider.CalendarContract.Events._ID + "=?",
+                    new String[]{String.valueOf(evId)}, null)) {
+                found = c != null && c.moveToFirst();
+            }
+            if (!found) return fail("Der Termin wurde nicht gespeichert.");
+            return new JSONObject().put("ok", true).put("msg", "Termin eingetragen.").put("kalender", cal[1]).toString();
         } catch (Exception e) {
             return fail("Termin konnte nicht eingetragen werden: " + e.getMessage());
         }

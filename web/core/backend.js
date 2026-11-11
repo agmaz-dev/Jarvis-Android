@@ -634,7 +634,7 @@
       else { ganz = true; start = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); ende = new Date(start.getTime() + 86400000); }
       const titel = a.titel || a.text || "Termin";
       const r = await nativeAct("kalender_neu", { titel, start: start.getTime(), ende: ende.getTime(), ort: a.ort || "", ganztags: ganz });
-      return { say: r.ok ? `Eingetragen: ${titel} am ${d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}${tm ? " um " + tm[1] + ":" + (tm[2] || "00") + " Uhr" : ""}.` : r.msg };
+      return { say: r.ok ? `Eingetragen: ${titel} am ${d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" })}${tm ? " um " + tm[1] + ":" + (tm[2] || "00") + " Uhr" : ""}${r.kalender ? ", im Kalender " + r.kalender : ""}.` : r.msg };
     }
     if (typ === "kalender_liste" || typ === "termine") {
       const d = parseDatum(a.datum || "heute") || new Date();
