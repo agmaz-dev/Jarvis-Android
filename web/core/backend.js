@@ -24,6 +24,7 @@
     chat_sichtbar: true, sounds: true,
     internetsuche: true, suchmaschine: "google",
     mail_adresse: "", mail_passwort: "", aktionen_bestaetigen: true,
+    hintergrund_weckwort: false, weckwort_schwelle: 0.45,
     strikt_lokal: false, privat_weiche: true, gedaechtnis_cloud: false, privat_woerter: "", lokal_modell: "",
     routinen: [
       { satz: "guten morgen", aktion: "briefing", wert: "" },
@@ -1264,7 +1265,11 @@
       if (path === "/api/status") return json(200, { ok: true, version: VERSION, themes: THEMES });
       return json(404, { error: "Nicht gefunden: " + path });
     }
-    if (path === "/api/settings") { const s = updateSettings(data); CACHE.clear(); return json(200, publicSettings(s)); }
+    if (path === "/api/settings") {
+      const s = updateSettings(data); CACHE.clear();
+      if (NATIVE && NATIVE.wakeConfig && ("hintergrund_weckwort" in data || "weckwort_schwelle" in data)) { try { NATIVE.wakeConfig(!!s.hintergrund_weckwort, +s.weckwort_schwelle || 0.45); } catch (e) { } }
+      return json(200, publicSettings(s));
+    }
     if (path === "/api/mailtest") {
       const s = loadSettings(), c = mailCreds(s);
       if (!c) return json(200, { ok: false, fehler: "Bitte E-Mail-Adresse und App-Passwort eintragen und speichern." });

@@ -163,6 +163,24 @@ public class MainActivity extends Activity {
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START);
+        handleWake(getIntent());
+    }
+
+    // ------------------------------------------------------------------ „Hey Jarvis“ aus dem Hintergrund
+    private volatile boolean wakePending = false;
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleWake(intent);
+    }
+
+    private void handleWake(Intent i) {
+        if (i == null || !"de.agmaz.jarvis.WAKE".equals(i.getAction())) return;
+        if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true); }
+        wakePending = true;
+        js("wake", "go", null);   // falls die Seite schon geladen ist
     }
 
     @Override
@@ -669,6 +687,53 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void llmStop() { Llm.nativeStop(); }
 
+        // ---------------- „Hey Jarvis“ im Hintergrund
+        @JavascriptInterface
+        public void wakeConfig(final boolean on, final float thr) {
+            main.post(() -> {
+                if (on && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+                WakeService.configure(MainActivity.this, on, thr);
+            });
+        }
+
+        @JavascriptInterface
+        public String wakeStatus() {
+            try {
+                android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+                return new JSONObject()
+                        .put("an", WakeService.enabled(MainActivity.this))
+                        .put("laeuft", WakeService.running)
+                        .put("overlay", Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(MainActivity.this))
+                        .put("akku", pm.isIgnoringBatteryOptimizations(getPackageName()))
+                        .put("score", WakeService.lastScore).toString();
+            } catch (Exception e) { return "{}"; }
+        }
+
+        @JavascriptInterface
+        public void openOverlaySettings() {
+            main.post(() -> {
+                try { startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))); }
+                catch (Exception e) { toast("Bitte in den Einstellungen „Über anderen Apps einblenden“ für Jarvis erlauben."); }
+            });
+        }
+
+        @JavascriptInterface
+        @SuppressWarnings("BatteryLife")
+        public void openBatterySettings() {
+            main.post(() -> {
+                try { startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()))); }
+                catch (Exception e) { try { startActivity(new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)); } catch (Exception ignored) { } }
+            });
+        }
+
+        /** Nach einem „Hey Jarvis“-Gespräch: Jarvis wieder in den Hintergrund schicken. */
+        @JavascriptInterface
+        public void sleep() { main.post(() -> moveTaskToBack(true)); }
+
+        @JavascriptInterface
+        public boolean consumeWake() { boolean w = wakePending; wakePending = false; return w; }
+
         @JavascriptInterface
         public void llmRetry(final String id) { if (llm != null) llm.clearCrash(id); }
 
@@ -744,6 +809,8 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         beepUnmuteNow();
+        WakeService.appVisible = false;
+        if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(false); setTurnScreenOn(false); }
         paused = true;
         if (recognizer != null && srActive && !srDialog) {
             recognizer.cancel();
@@ -755,6 +822,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        WakeService.appVisible = true;
+        WakeService.start(this);   // läuft weiter, pausiert aber, solange Jarvis offen ist
         paused = false;
         if (srPending != null) {
             String l = srPending;

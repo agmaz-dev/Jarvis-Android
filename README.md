@@ -33,3 +33,6 @@ Unter **Releases → „Jarvis – Test-APK“** liegt immer die neueste Version
 - `original/` – unveränderte Originaldateien von FreeJarvis zum Nachschlagen
 
 Einstellungen, API-Schlüssel und Gedächtnis liegen nur auf dem Gerät.
+
+## „Hey Jarvis“
+Die Weckwort-Erkennung nutzt [openWakeWord](https://github.com/dscripka/openWakeWord) (Code: Apache 2.0). Das vortrainierte Modell „hey_jarvis“ steht unter CC BY-NC-SA 4.0 – nur für private, nicht-kommerzielle Nutzung.

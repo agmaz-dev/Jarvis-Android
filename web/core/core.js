@@ -699,7 +699,11 @@ ${window.JarvisNative && window.JarvisNative.googleSetup ? '<div class="row"><la
 <div class="row"><label>Lautstärke</label><input type="range" min="0.1" max="1" step="0.05" data-k="lautstaerke"></div>
 <div class="row"><label></label><div class="inl"><span class="res" id="jv-voiceres"></span><button class="jv-btn" id="jv-voicetest">Stimme testen</button></div></div>
 </section>
-<section class="tab" data-tab="mikro"><h3>Wann soll ${esc(J.settings.name)} zuhören?</h3><p class="hint">Die Spracherkennung läuft im Browser (Chrome oder Edge) und braucht Internet. Mit Lautsprechern kann ${esc(J.settings.name)} sich selbst hören: dann „Nach der Antwort“ wählen oder ein Headset nutzen.</p>
+<section class="tab" data-tab="mikro"><h3>Wann soll ${esc(J.settings.name)} zuhören?</h3>
+${window.JarvisNative && window.JarvisNative.wakeConfig ? `<div class="box"><h4>„Hey Jarvis“ im Hintergrund</h4><p class="hint" style="margin:0 0 10px">Jarvis hört auch, wenn die App geschlossen oder das Handy gesperrt ist, auf „Hey Jarvis“ und kommt dann nach vorn. Die Erkennung läuft offline auf dem Handy, es geht nichts ins Internet. Kostet etwas Akku. Android zeigt dabei eine Benachrichtigung „Jarvis hört …“.</p>
+<div class="row"><label>Im Hintergrund zuhören</label>${sw("hintergrund_weckwort", "Auf „Hey Jarvis“ reagieren")}</div>
+<div class="row"><label>Empfindlichkeit<small>links: reagiert leichter (auch mal fälschlich) · rechts: nur bei deutlichem „Hey Jarvis“</small></label><input type="range" min="0.2" max="0.8" step="0.05" data-k="weckwort_schwelle"></div>
+<div id="jv-wake" class="hint">…</div></div>` : ""}<p class="hint">Die Spracherkennung läuft im Browser (Chrome oder Edge) und braucht Internet. Mit Lautsprechern kann ${esc(J.settings.name)} sich selbst hören: dann „Nach der Antwort“ wählen oder ein Headset nutzen.</p>
 <div class="seg" style="margin-bottom:16px">
 <label><input type="radio" name="mic" value="nach_antwort" data-k="mikro"><span><b>An, wenn fertig gesprochen</b><small>hört zu, pausiert während der Antwort (empfohlen)</small></span></label>
 <label><input type="radio" name="mic" value="immer" data-k="mikro"><span><b>Immer an</b><small>auch dazwischenreden möglich · Headset empfohlen</small></span></label>
@@ -834,6 +838,19 @@ ${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail<
     return out;
   }
   let llmT = 0; const llmSpeed = {};
+  let wakeT = 0;
+  function renderWake() {
+    clearTimeout(wakeT);
+    const box = $("jv-wake"); if (!box || !$("jv-set").classList.contains("on")) return;
+    let w = {}; try { w = JSON.parse(window.JarvisNative.wakeStatus()); } catch (e) { }
+    const ok = b => b ? '<b style="color:#3ddc97">✓</b>' : '<b style="color:#ff6b6b">✗</b>';
+    box.innerHTML = `${ok(w.an && w.laeuft)} Dienst ${w.an ? (w.laeuft ? "läuft (pausiert, solange Jarvis offen ist)" : "startet …") : "aus"}<br>`
+      + `${ok(w.overlay)} „Über anderen Apps einblenden“ ${w.overlay ? "erlaubt" : 'fehlt – sonst kann Jarvis nicht von selbst aufgehen <button class="jv-btn" id="jv-ov">Erlauben</button>'}<br>`
+      + `${ok(w.akku)} Akku-Optimierung ${w.akku ? "aus (gut)" : 'an – Android könnte Jarvis beenden <button class="jv-btn" id="jv-bat">Ausschalten</button>'}`;
+    const ov = $("jv-ov"); if (ov) ov.onclick = () => window.JarvisNative.openOverlaySettings();
+    const bt = $("jv-bat"); if (bt) bt.onclick = () => window.JarvisNative.openBatterySettings();
+    wakeT = setTimeout(renderWake, 2000);
+  }
   function renderLlm() {
     clearTimeout(llmT);
     const box = $("jv-llm"); if (!box) return;
@@ -892,6 +909,7 @@ ${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail<
         r.className = "res " + (x.ok ? "ok" : "bad"); r.textContent = x.ok ? "✓ verbunden · " + x.ungelesen + " ungelesen" : "✗ " + (x.fehler || x.msg); }
       catch (e) { r.className = "res bad"; r.textContent = "✗ " + e.message; } }; }
     if (HAS_LLM) setTimeout(renderLlm, 80);   // erst wenn das Fenster offen ist
+    if (window.JarvisNative && window.JarvisNative.wakeStatus) setTimeout(renderWake, 100);
     /* Anbieter antippen: passenden Kasten zeigen (darunter) und hervorheben */
     box.querySelectorAll('input[name="anb"]').forEach(r => r.addEventListener("change", () => {
       box.querySelectorAll("[data-box]").forEach(x => x.style.outline = "");
@@ -996,6 +1014,26 @@ ${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail<
     requestAnimationFrame(loop);
   }
 
+  /* „Hey Jarvis“ aus dem Hintergrund: kurz antworten, dann zuhören; nach dem Gespräch zurück in den Hintergrund */
+  let wakeMode = false, idleSince = 0;
+  J.wakeUp = function () {
+    if (!J.started) start();
+    stopSpeaking(); wakeMode = true; idleSince = 0;
+    MIC.paused = false; MIC.blocked = false;
+    tone(660, 990, .12, .06);
+    SPEAK.reset(); SPEAK.say("Ja?");
+    SPEAK.onDone(() => { MIC.oneShot = true; micSync(); });
+  };
+  window.__jvNative = window.__jvNative || {};
+  window.__jvNative.wake = () => { try { window.JarvisNative.consumeWake(); } catch (e) { } J.wakeUp(); };
+  setInterval(() => {
+    if (!wakeMode) return;
+    const still = J.state === "idle" && !MIC.running && !MIC.starting && !SPEAK.busy();
+    if (!still) { idleSince = 0; return; }
+    if (!idleSince) idleSince = Date.now();
+    if (Date.now() - idleSince > 12000) { wakeMode = false; idleSince = 0; try { window.JarvisNative.sleep(); } catch (e) { } }
+  }, 1500);
+
   async function boot() {
     try { J.settings = await api("/api/settings"); }
     catch (e) {
@@ -1014,6 +1052,7 @@ ${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail<
     const r = await loadModels();
     if (st) st.textContent = !r ? "Server nicht erreichbar" : r.modell ? "KI bereit · " + PROV[r.anbieter] + " · " + r.modell : "Keine KI gefunden · nach dem Start oben links in die Einstellungen";
     if (!SR) addMsg("note", "Hinweis: Spracheingabe gibt es nur in Chrome oder Edge. Schreiben geht überall.");
+    try { if (window.JarvisNative && window.JarvisNative.consumeWake && window.JarvisNative.consumeWake()) J.wakeUp(); } catch (e) { }
   }
   if (document.readyState === "complete") boot(); else addEventListener("load", boot);
 })();
