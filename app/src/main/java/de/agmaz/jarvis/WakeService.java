@@ -38,6 +38,10 @@ public class WakeService extends Service {
     static volatile boolean running = false;
     static volatile boolean appVisible = false;
     static volatile float lastScore = 0;
+    static volatile float testMax = 0;
+    static volatile boolean testMode = false;
+    static volatile String lastError = "";
+    static volatile long lastAudio = 0;
 
     private volatile boolean stop = false;
     private Thread worker;
@@ -132,7 +136,7 @@ public class WakeService extends Service {
 
             while (!stop) {
                 // Jarvis ist offen: Mikrofon freigeben, warten
-                if (appVisible) {
+                if (appVisible && !testMode) {
                     if (recording) { rec.stop(); rec.release(); rec = null; recording = false; }
                     Thread.sleep(300);
                     continue;
@@ -141,13 +145,14 @@ public class WakeService extends Service {
                     int min = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
                     rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000, AudioFormat.CHANNEL_IN_MONO,
                             AudioFormat.ENCODING_PCM_16BIT, Math.max(min, CHUNK * 4));
-                    if (rec.getState() != AudioRecord.STATE_INITIALIZED) { rec.release(); rec = null; Thread.sleep(2000); continue; }
+                    if (rec.getState() != AudioRecord.STATE_INITIALIZED) { rec.release(); rec = null; lastError = "Mikrofon belegt oder nicht erlaubt"; Thread.sleep(2000); continue; }
+                    lastError = "";
                     rec.startRecording();
                     recording = true;
                     for (float[] f : feats) java.util.Arrays.fill(f, 0f);
                 }
                 int got = 0;
-                while (got < CHUNK && !stop && !appVisible) {
+                while (got < CHUNK && !stop && (!appVisible || testMode)) {
                     int n = rec.read(pcm, got, CHUNK - got);
                     if (n <= 0) break;
                     got += n;
@@ -189,6 +194,8 @@ public class WakeService extends Service {
                     score = ((float[][]) r.get(0).getValue())[0][0];
                 }
                 lastScore = score;
+                lastAudio = System.currentTimeMillis();
+                if (testMode) { if (score > testMax) testMax = score; continue; }
                 float thr = prefs(this).getFloat("thr", 0.45f);
                 long now = System.currentTimeMillis();
                 if (score >= thr && now > cooldownUntil) {
@@ -201,6 +208,7 @@ public class WakeService extends Service {
         } catch (InterruptedException ignored) {
         } catch (Throwable t) {
             android.util.Log.e("JarvisWake", "Fehler", t);
+            lastError = t.getClass().getSimpleName() + ": " + t.getMessage();
         } finally {
             if (rec != null) { try { rec.stop(); } catch (Exception ignored) { } rec.release(); }
             try { if (mel != null) mel.close(); if (emb != null) emb.close(); if (kw != null) kw.close(); } catch (Exception ignored) { }

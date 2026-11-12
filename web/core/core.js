@@ -846,10 +846,15 @@ ${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail<
     const ok = b => b ? '<b style="color:#3ddc97">✓</b>' : '<b style="color:#ff6b6b">✗</b>';
     box.innerHTML = `${ok(w.an && w.laeuft)} Dienst ${w.an ? (w.laeuft ? "läuft (pausiert, solange Jarvis offen ist)" : "startet …") : "aus"}<br>`
       + `${ok(w.overlay)} „Über anderen Apps einblenden“ ${w.overlay ? "erlaubt" : 'fehlt – sonst kann Jarvis nicht von selbst aufgehen <button class="jv-btn" id="jv-ov">Erlauben</button>'}<br>`
-      + `${ok(w.akku)} Akku-Optimierung ${w.akku ? "aus (gut)" : 'an – Android könnte Jarvis beenden <button class="jv-btn" id="jv-bat">Ausschalten</button>'}`;
+      + `${ok(w.akku)} Akku-Optimierung ${w.akku ? "aus (gut)" : 'an – Android könnte Jarvis beenden <button class="jv-btn" id="jv-bat">Ausschalten</button>'}<br>`
+      + `${ok(w.mikro)} Mikrofon-Berechtigung${w.fehler ? '<br><b style="color:#ff6b6b">Fehler:</b> ' + esc(w.fehler) : ""}<br>`
+      + (w.test ? `<b>Test läuft:</b> Sag jetzt „Hey Jarvis“ … ${w.audio ? "🎤 Mikrofon hört" : "⚠ kein Ton vom Mikrofon"} · höchster Wert <b>${(w.testMax || 0).toFixed(2)}</b> ${w.testMax >= (J.settings.weckwort_schwelle || .45) ? '<b style="color:#3ddc97">✓ erkannt</b>' : "(nötig: " + (+J.settings.weckwort_schwelle || .45).toFixed(2) + ")"} <button class="jv-btn" id="jv-wt0">Test beenden</button>`
+        : (w.an ? '<button class="jv-btn" id="jv-wt1">Erkennung testen</button>' : "Zum Testen erst oben einschalten und Speichern."));
+    const t1 = $("jv-wt1"); if (t1) t1.onclick = () => { window.JarvisNative.wakeTest(true); setTimeout(renderWake, 300); };
+    const t0 = $("jv-wt0"); if (t0) t0.onclick = () => { window.JarvisNative.wakeTest(false); setTimeout(renderWake, 300); };
     const ov = $("jv-ov"); if (ov) ov.onclick = () => window.JarvisNative.openOverlaySettings();
     const bt = $("jv-bat"); if (bt) bt.onclick = () => window.JarvisNative.openBatterySettings();
-    wakeT = setTimeout(renderWake, 2000);
+    wakeT = setTimeout(renderWake, w.test ? 500 : 2000);
   }
   function renderLlm() {
     clearTimeout(llmT);
@@ -961,7 +966,7 @@ ${window.JarvisNative && window.JarvisNative.act ? `<div class="box"><h4>E-Mail<
       } catch (e) { res.className = "res bad"; res.textContent = "✗ " + e.message; }
     };
   }
-  function closeSettings() { $("jv-set").classList.remove("on"); api("/api/settings").then(x => { J.settings = x; applySettings(); }).catch(() => micSync()); }
+  function closeSettings() { try { window.JarvisNative && window.JarvisNative.wakeTest && window.JarvisNative.wakeTest(false); } catch (e) { } $("jv-set").classList.remove("on"); api("/api/settings").then(x => { J.settings = x; applySettings(); }).catch(() => micSync()); }
   J.openSettings = openSettings;
   function applySettings() {
     document.body.classList.toggle("jv-nochat", !J.settings.chat_sichtbar);

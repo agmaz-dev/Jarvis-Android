@@ -706,7 +706,11 @@ public class MainActivity extends Activity {
                         .put("laeuft", WakeService.running)
                         .put("overlay", Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(MainActivity.this))
                         .put("akku", pm.isIgnoringBatteryOptimizations(getPackageName()))
-                        .put("score", WakeService.lastScore).toString();
+                        .put("score", WakeService.lastScore)
+                        .put("test", WakeService.testMode).put("testMax", WakeService.testMax)
+                        .put("audio", WakeService.lastAudio > 0 && System.currentTimeMillis() - WakeService.lastAudio < 3000)
+                        .put("fehler", WakeService.lastError)
+                        .put("mikro", checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED).toString();
             } catch (Exception e) { return "{}"; }
         }
 
@@ -730,6 +734,13 @@ public class MainActivity extends Activity {
         /** Nach einem „Hey Jarvis“-Gespräch: Jarvis wieder in den Hintergrund schicken. */
         @JavascriptInterface
         public void sleep() { main.post(() -> moveTaskToBack(true)); }
+
+        @JavascriptInterface
+        public void wakeTest(final boolean on) {
+            WakeService.testMax = 0;
+            WakeService.testMode = on;
+            if (on) main.post(() -> WakeService.start(MainActivity.this));
+        }
 
         @JavascriptInterface
         public boolean consumeWake() { boolean w = wakePending; wakePending = false; return w; }
